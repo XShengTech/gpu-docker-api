@@ -492,7 +492,7 @@ func (rs *ReplicaSetService) patchVolume(spec *models.VolumePatch, info *models.
 	return info, nil
 }
 
-func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restorePort, isLatest bool) error {
+func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, restorePort, isLatest bool) error {
 	if isLatest {
 		// get the latest version number
 		version, ok := vmap.ContainerVersionMap.Get(name)
@@ -511,6 +511,17 @@ func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restorePort,
 		schedulers.GpuScheduler.Restore(uuids)
 		log.Infof("services.StopContainer, container: %s restore %d gpus, uuids: %+v",
 			name, len(uuids), uuids)
+	}
+
+	// whether to restore cpu resources
+	if restoreCpu {
+		cpusets, err := rs.containerCpusetCpus(name)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerCpusetCpus failed")
+		}
+		schedulers.CpuScheduler.Restore(cpusets)
+		log.Infof("services.StopContainer, container: %s restore %d cpus, cpusets: %+v",
+			name, len(cpusets), cpusets)
 	}
 
 	// whether to restore port resources

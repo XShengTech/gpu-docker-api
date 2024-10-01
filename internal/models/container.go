@@ -21,7 +21,7 @@ type CpuPatch struct {
 }
 
 type MemoryPatch struct {
-	Memory string `json:"memory,omitempty"` // KB, MB, GB, TB
+	Memory string `json:"memory"` // KB, MB, GB, TB
 }
 
 type VolumePatch struct {
