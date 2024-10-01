@@ -28,19 +28,23 @@ const (
 	CodeContainerVersionMustBeGreaterThanOrEqualZero ResCode = 1020
 	CodeContainerRollbackFailed                      ResCode = 1021
 	CodeContainerNoNeedRollback                      ResCode = 1022
-	CodeVolumeCreateFailed                           ResCode = 1023
-	CodeVolumeNameCannotBeEmpty                      ResCode = 1024
-	CodeVolumeDeleteFailed                           ResCode = 1025
-	CodeVolumeExisted                                ResCode = 1026
-	CodeVolumeNameMustContainVersion                 ResCode = 1027
-	CodeVolumeSizeNoNeedPatch                        ResCode = 1028
-	CodeVolumeSizeNotSupported                       ResCode = 1029
-	CodeVolumeSizeUsedGreaterThanReduce              ResCode = 1030
-	CodeVolumeNameNotContainsDash                    ResCode = 1031
-	CodeVolumeNameNotBeginWithForwardSlash           ResCode = 1032
-	CodeVolumeGetInfoFailed                          ResCode = 1033
-	CodeVolumeGetHistoryFailed                       ResCode = 1034
-	CodeVolumePatchFailed                            ResCode = 1035
+	CodeContainerCpuNotEnough                        ResCode = 1023
+	CodeCpuCountMustBeGreaterThanOrEqualZero         ResCode = 1024
+	CodeContainerMemorySizeNotSupported              ResCode = 1025
+
+	CodeVolumeCreateFailed                 ResCode = 1100
+	CodeVolumeNameCannotBeEmpty            ResCode = 1101
+	CodeVolumeDeleteFailed                 ResCode = 1102
+	CodeVolumeExisted                      ResCode = 1103
+	CodeVolumeNameMustContainVersion       ResCode = 1104
+	CodeVolumeSizeNoNeedPatch              ResCode = 1105
+	CodeVolumeSizeNotSupported             ResCode = 1106
+	CodeVolumeSizeUsedGreaterThanReduce    ResCode = 1107
+	CodeVolumeNameNotContainsDash          ResCode = 1108
+	CodeVolumeNameNotBeginWithForwardSlash ResCode = 1109
+	CodeVolumeGetInfoFailed                ResCode = 1110
+	CodeVolumeGetHistoryFailed             ResCode = 1111
+	CodeVolumePatchFailed                  ResCode = 1112
 )
 
 var codeMsgMap = map[ResCode]string{
@@ -59,6 +63,7 @@ var codeMsgMap = map[ResCode]string{
 	CodeContainerStopFailed:                          "Failed to stop container",
 	CodeContainerRestartFailed:                       "Failed to restart container",
 	CodeGpuCountMustBeGreaterThanOrEqualZero:         "GPU count must be greater than or equal to 0",
+	CodeContainerCpuNotEnough:                        "Not enough CPU resources",
 	CodeContainerGpuNotEnough:                        "Not enough GPU resources",
 	CodeContainerPortNotEnough:                       "Not enough port resources",
 	CodeContainerCommitFailed:                        "Failed to commit image",
@@ -69,19 +74,22 @@ var codeMsgMap = map[ResCode]string{
 	CodeContainerVersionMustBeGreaterThanOrEqualZero: "Container version must be greater than or equal to 0",
 	CodeContainerRollbackFailed:                      "Failed to rollback container",
 	CodeContainerNoNeedRollback:                      "Container doesn't need rollback, the current version is the same as the requested version",
-	CodeVolumeCreateFailed:                           "Failed to create volume",
-	CodeVolumeNameCannotBeEmpty:                      "Volume name cannot be empty",
-	CodeVolumeDeleteFailed:                           "Failed to delete volume",
-	CodeVolumeExisted:                                "Volume already exists",
-	CodeVolumeNameMustContainVersion:                 "Volume name must contain the version number",
-	CodeVolumeSizeNoNeedPatch:                        "Volume doesn't need patch, as it is the same size before and after the update",
-	CodeVolumeSizeNotSupported:                       "Volume size units are not supported, supported units: KB, MB, GB, TB",
-	CodeVolumeSizeUsedGreaterThanReduce:              "Failed to patch volume size, the patch size is smaller than the used size",
-	CodeVolumeNameNotContainsDash:                    "Volume name cannot contain dash",
-	CodeVolumeNameNotBeginWithForwardSlash:           "Volume name must not begin with /",
-	CodeVolumeGetInfoFailed:                          "Failed to get volume info",
-	CodeVolumeGetHistoryFailed:                       "Failed to get volume history",
-	CodeVolumePatchFailed:                            "Failed to patch volume",
+	CodeCpuCountMustBeGreaterThanOrEqualZero:         "CPU count must be greater than or equal to 0",
+	CodeContainerMemorySizeNotSupported:              "Memory size units are not supported, supported units: KB, MB, GB, TB",
+
+	CodeVolumeCreateFailed:                 "Failed to create volume",
+	CodeVolumeNameCannotBeEmpty:            "Volume name cannot be empty",
+	CodeVolumeDeleteFailed:                 "Failed to delete volume",
+	CodeVolumeExisted:                      "Volume already exists",
+	CodeVolumeNameMustContainVersion:       "Volume name must contain the version number",
+	CodeVolumeSizeNoNeedPatch:              "Volume doesn't need patch, as it is the same size before and after the update",
+	CodeVolumeSizeNotSupported:             "Volume size units are not supported, supported units: KB, MB, GB, TB",
+	CodeVolumeSizeUsedGreaterThanReduce:    "Failed to patch volume size, the patch size is smaller than the used size",
+	CodeVolumeNameNotContainsDash:          "Volume name cannot contain dash",
+	CodeVolumeNameNotBeginWithForwardSlash: "Volume name must not begin with /",
+	CodeVolumeGetInfoFailed:                "Failed to get volume info",
+	CodeVolumeGetHistoryFailed:             "Failed to get volume history",
+	CodeVolumePatchFailed:                  "Failed to patch volume",
 }
 
 func (c ResCode) Msg() string {

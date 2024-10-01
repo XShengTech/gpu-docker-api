@@ -24,6 +24,7 @@ const (
 	Volumes    Resource = "volumes"
 	Versions   Resource = "versions"
 	Merges     Resource = "merges"
+	Cpus       Resource = "cpus"
 	Gpus       Resource = "gpus"
 	Ports      Resource = "ports"
 

@@ -70,6 +70,10 @@ func (p *program) Init(svc.Environment) (err error) {
 		return
 	}
 
+	if err = schedulers.InitCpuScheduler(); err != nil {
+		return
+	}
+
 	if err = schedulers.InitPortScheduler(*portRange); err != nil {
 		return
 	}
@@ -139,6 +143,7 @@ func (p *program) Stop() error {
 
 	workQueue.Close()
 	docker.CloseDockerClient()
+	_ = schedulers.CloseCpuScheduler()
 	_ = schedulers.CloseGpuScheduler()
 	_ = schedulers.ClosePortScheduler()
 	_ = version.CloseVersionMap()

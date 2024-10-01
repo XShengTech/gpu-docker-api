@@ -70,7 +70,15 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		if err != nil {
 			return id, containerName, errors.Wrapf(err, "GpuScheduler.Apply failed, spec: %+v", spec)
 		}
-		hostConfig.Resources = rs.newContainerResource(uuids)
+		cpusets, err := schedulers.CpuScheduler.Apply(spec.CpuCount)
+		if err != nil {
+			return id, containerName, errors.Wrapf(err, "CpuScheduler.Apply failed, spec: %+v", spec)
+		}
+		memory, err := models.MemoryGetBytes(spec.Memory)
+		if err != nil {
+			return id, containerName, errors.Wrapf(err, "MemoryGetBytes failed, spec: %+v", spec)
+		}
+		hostConfig.Resources = rs.newContainerResource(uuids, cpusets, memory)
 		log.Infof("services.RunGpuContainer, container: %s apply %d gpus, uuids: %+v", spec.ReplicaSetName+"-0", len(uuids), uuids)
 	}
 
@@ -208,6 +216,18 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 		return id, newContainerName, errors.WithMessage(err, "patchGpu failed")
 	}
 
+	// update cpu info
+	info, err = rs.patchCpu(ctrVersionName, spec.CpuPatch, info)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "patchCpu failed")
+	}
+
+	// update memory info
+	info, err = rs.patchMemory(ctrVersionName, spec.MemoryPatch, info)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "patchMemory failed")
+	}
+
 	// update volume info
 	info, err = rs.patchVolume(spec.VolumePatch, info)
 	if err != nil {
@@ -343,7 +363,7 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		}
 		if applyGpus == spec.GpuCount {
 			// no gpu was used before.
-			info.HostConfig.Resources = rs.newContainerResource(uuids)
+			info.HostConfig.Resources = rs.newContainerResource(uuids, info.HostConfig.Resources.CpusetCpus, info.HostConfig.Resources.Memory)
 			log.Infof("services.PatchContainerGpuInfo, container: %s change to card container, now use %d gpus, uuids: %s",
 				name, len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs), info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
 		} else {
@@ -368,6 +388,67 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 				name, restoreGpus, len(uuids[:restoreGpus]), uuids[:restoreGpus])
 		}
 	}
+
+	return info, nil
+}
+
+func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *models.EtcdContainerInfo) (*models.EtcdContainerInfo, error) {
+	if spec == nil {
+		return info, nil
+	}
+	cpuset, err := rs.containerCpusetCpus(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
+	}
+
+	cpuCount := strings.Split(cpuset, ",")
+	if len(cpuCount) == spec.CpuCount {
+		return info, nil
+	}
+
+	if spec.CpuCount > len(cpuCount) {
+		// lift cpu configuration
+		applyCpus := spec.CpuCount - len(cpuCount)
+		cpusets, err := schedulers.CpuScheduler.Apply(applyCpus)
+		log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, applyCpus, cpusets)
+		if err != nil {
+			return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
+		}
+		info.HostConfig.Resources.CpusetCpus = cpusets
+		log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
+			name, applyCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
+	} else {
+		restoreCpus := len(cpuCount) - spec.CpuCount
+		schedulers.CpuScheduler.Restore(strings.Trim(strings.Join(cpuCount[:restoreCpus], ","), ","))
+		log.Infof("services.PatchContainerCpuInfo, container: %s restore %d cpus, cpusets: %+v",
+			name, len(cpuCount[:restoreCpus]), cpuCount[:restoreCpus])
+		info.HostConfig.Resources.CpusetCpus = strings.Trim(strings.Join(cpuCount[restoreCpus:], ","), ",")
+		log.Infof("services.PatchContainerCpuInfo, container: %s reduce %d cpu configuration, now use %d cpus, cpusets: %+v",
+			name, restoreCpus, len(info.HostConfig.Resources.CpusetCpus), info.HostConfig.Resources.CpusetCpus)
+	}
+
+	return info, nil
+}
+
+func (rs *ReplicaSetService) patchMemory(name string, spec *models.MemoryPatch, info *models.EtcdContainerInfo) (*models.EtcdContainerInfo, error) {
+	if spec == nil {
+		return info, nil
+	}
+	memory, err := rs.containerMemory(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerMemory failed")
+	}
+
+	applymemory, err := models.MemoryGetBytes(spec.Memory)
+	if err != nil {
+		return info, errors.WithMessage(err, "models.MemoryGetBytes failed")
+	}
+
+	if memory == applymemory {
+		return info, nil
+	}
+
+	info.HostConfig.Resources.Memory = applymemory
 
 	return info, nil
 }
@@ -759,11 +840,32 @@ func (rs *ReplicaSetService) containerPortBindings(name string) ([]string, error
 	return ports, nil
 }
 
-func (rs *ReplicaSetService) newContainerResource(uuids []string) container.Resources {
-	return container.Resources{DeviceRequests: []container.DeviceRequest{{
-		Driver:       "nvidia",
-		DeviceIDs:    uuids,
-		Capabilities: [][]string{{"gpu"}},
-		Options:      nil,
-	}}}
+func (rs *ReplicaSetService) containerCpusetCpus(name string) (string, error) {
+	ctx := context.Background()
+	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return "", errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+	}
+	return resp.HostConfig.Resources.CpusetCpus, nil
+}
+
+func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
+	ctx := context.Background()
+	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return 0, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+	}
+	return resp.HostConfig.Resources.Memory, nil
+}
+
+func (rs *ReplicaSetService) newContainerResource(uuids []string, cpuset string, memory int64) container.Resources {
+	return container.Resources{
+		CpusetCpus: cpuset,
+		Memory:     memory,
+		DeviceRequests: []container.DeviceRequest{{
+			Driver:       "nvidia",
+			DeviceIDs:    uuids,
+			Capabilities: [][]string{{"gpu"}},
+			Options:      nil,
+		}}}
 }

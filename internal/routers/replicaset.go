@@ -125,6 +125,20 @@ func (rh *ReplicaSetHandler) Run(c *gin.Context) {
 		return
 	}
 
+	if spec.CpuCount < 0 {
+		log.Error("failed to create container, cpu count must be greater than 0")
+		ResponseError(c, CodeCpuCountMustBeGreaterThanOrEqualZero)
+		return
+	}
+
+	spec.Memory = strings.ToUpper(spec.Memory)
+	unit := spec.Memory[len(spec.Memory)-2:]
+	if _, ok := models.VolumeSizeMap[unit]; !ok {
+		log.Errorf("failed to Patch volume size, size: %s is not supported", spec.Memory)
+		ResponseError(c, CodeContainerMemorySizeNotSupported)
+		return
+	}
+
 	if strings.Contains(spec.ReplicaSetName, "-") {
 		log.Error("failed to create container, container name cannot contain dash")
 		ResponseError(c, CodeContainerNameCannotContainDash)
@@ -240,11 +254,27 @@ func (rh *ReplicaSetHandler) Patch(c *gin.Context) {
 		return
 	}
 
+	if spec.CpuPatch != nil && spec.CpuPatch.CpuCount < 0 {
+		log.Errorf("failed to patch container, cpuCount: %d must be greater than or equal to 0", spec.CpuPatch.CpuCount)
+		ResponseError(c, CodeCpuCountMustBeGreaterThanOrEqualZero)
+		return
+	}
+
 	if spec.VolumePatch != nil && (spec.VolumePatch.OldBind.Format() == "" ||
 		spec.VolumePatch.NewBind.Format() == "") {
 		log.Errorf("failed to patch container,volume Patch Info is invalid: %v", spec.VolumePatch)
 		ResponseError(c, CodeInvalidParams)
 		return
+	}
+
+	if spec.MemoryPatch != nil {
+		spec.MemoryPatch.Memory = strings.ToUpper(spec.MemoryPatch.Memory)
+		unit := spec.MemoryPatch.Memory[len(spec.MemoryPatch.Memory)-2:]
+		if _, ok := models.VolumeSizeMap[unit]; !ok {
+			log.Errorf("failed to Patch volume size, size: %s is not supported", spec.MemoryPatch)
+			ResponseError(c, CodeContainerMemorySizeNotSupported)
+			return
+		}
 	}
 
 	_, containerName, err := cs.PatchContainer(name, &spec)

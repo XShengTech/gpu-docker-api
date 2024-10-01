@@ -7,6 +7,7 @@ import (
 const (
 	gpuNotEnough  = "gpu not enough"
 	portNotEnough = "port not enough"
+	cpuNotEnough  = "cpu not enough"
 )
 
 func NewGpuNotEnoughError() error {
@@ -29,4 +30,15 @@ func IsPortNotEnoughError(err error) bool {
 		return false
 	}
 	return errors.Cause(err).Error() == portNotEnough
+}
+
+func NewCpuNotEnoughError() error {
+	return errors.New(cpuNotEnough)
+}
+
+func IsCpuNotEnoughError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Cause(err).Error() == cpuNotEnough
 }

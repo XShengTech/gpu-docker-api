@@ -1,0 +1,152 @@
+package schedulers
+
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/commander-cli/cmd"
+	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/xerrors"
+	"github.com/pkg/errors"
+)
+
+const (
+	allCpuProcessorsCommand = "cat /proc/cpuinfo | grep 'processor' | wc -l"
+
+	cpuStatusMapKey = "cpuStatusMapKey"
+)
+
+var CpuScheduler *cpuScheduler
+
+type cpuScheduler struct {
+	sync.RWMutex
+
+	AvailableCpuNums int             `json:"availableCpuNums"`
+	CpuStatusMap     map[string]byte `json:"cpuStatusMap"`
+}
+
+func InitCpuScheduler() error {
+	var err error
+	CpuScheduler, err = initCpuFormEtcd()
+	if err != nil {
+		return errors.Wrap(err, "initFormEtcd failed")
+	}
+
+	if CpuScheduler.AvailableCpuNums == 0 || len(CpuScheduler.CpuStatusMap) == 0 {
+		// if it has not been initialized
+		cpus, err := getAllCpuProcessors()
+		if err != nil {
+			return errors.Wrap(err, "getAllCpuProcessors failed")
+		}
+
+		CpuScheduler.AvailableCpuNums = len(cpus)
+		for i := 0; i < len(cpus); i++ {
+			CpuScheduler.CpuStatusMap[cpus[i]] = 0
+		}
+	}
+	return nil
+}
+
+func CloseCpuScheduler() error {
+	return etcd.Put(etcd.Cpus, cpuStatusMapKey, CpuScheduler.serialize())
+}
+
+func initCpuFormEtcd() (c *cpuScheduler, err error) {
+	bytes, err := etcd.GetValue(etcd.Cpus, cpuStatusMapKey)
+	if err != nil {
+		if xerrors.IsNotExistInEtcdError(err) {
+			err = nil
+		} else {
+			return c, err
+		}
+	}
+
+	c = &cpuScheduler{
+		CpuStatusMap: make(map[string]byte),
+	}
+	if len(bytes) != 0 {
+		err = json.Unmarshal(bytes, &c)
+	}
+	return c, err
+}
+
+func (cs *cpuScheduler) Apply(num int) (string, error) {
+	if num <= 0 || num > cs.AvailableCpuNums {
+		return "", errors.New("num must be greater than 0 and less than " + strconv.Itoa(cs.AvailableCpuNums))
+	}
+
+	cs.Lock()
+	defer cs.Unlock()
+
+	var applyCpus []string
+	for k, v := range cs.CpuStatusMap {
+		if v == 0 {
+			cs.CpuStatusMap[k] = 1
+			applyCpus = append(applyCpus, k)
+			if len(applyCpus) == num {
+				break
+			}
+		}
+	}
+
+	if len(applyCpus) < num {
+		return "", xerrors.NewCpuNotEnoughError()
+	}
+
+	cpuSet := strings.Trim(strings.Join(applyCpus, ","), ",")
+
+	return cpuSet, nil
+}
+
+func (cs *cpuScheduler) Restore(cpuSet string) error {
+	cs.Lock()
+	defer cs.Unlock()
+
+	for _, cpu := range strings.Split(cpuSet, ",") {
+		cs.CpuStatusMap[cpu] = 0
+	}
+
+	return nil
+}
+
+func (cs *cpuScheduler) serialize() *string {
+	cs.RLock()
+	defer cs.RUnlock()
+
+	bytes, _ := json.Marshal(cs)
+	tmp := string(bytes)
+	return &tmp
+}
+
+func (cs *cpuScheduler) GetCpuStatus() map[string]byte {
+	cs.RLock()
+	defer cs.RUnlock()
+
+	copyMap := make(map[string]byte, len(cs.CpuStatusMap))
+	for k, v := range cs.CpuStatusMap {
+		copyMap[k] = v
+	}
+
+	return copyMap
+}
+
+func getAllCpuProcessors() ([]string, error) {
+	c := cmd.NewCommand(allCpuProcessorsCommand)
+	err := c.Execute()
+	if err != nil {
+		return nil, errors.Wrap(err, "cmd.Execute failed")
+	}
+
+	var cpuList []string
+	cpuNum, err := strconv.Atoi(c.Stdout())
+	if err != nil {
+		return nil, errors.Wrap(err, "strconv.Atoi failed")
+	}
+	for i := 0; i < cpuNum; i++ {
+		cpuList = append(cpuList, strconv.Itoa(i))
+	}
+
+	return cpuList, nil
+}
