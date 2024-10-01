@@ -2,6 +2,7 @@ package schedulers
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,11 +81,21 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	cs.Lock()
 	defer cs.Unlock()
 
+	keys := make([]int, 0, len(cs.CpuStatusMap))
+	for k := range cs.CpuStatusMap {
+		ki, _ := strconv.Atoi(k)
+		keys = append(keys, ki)
+	}
+
+	sort.Ints(keys)
+
 	var applyCpus []string
-	for k, v := range cs.CpuStatusMap {
+	for k := range keys {
+		ks := strconv.Itoa(k)
+		v := cs.CpuStatusMap[ks]
 		if v == 0 {
-			cs.CpuStatusMap[k] = 1
-			applyCpus = append(applyCpus, k)
+			cs.CpuStatusMap[ks] = 1
+			applyCpus = append(applyCpus, ks)
 			if len(applyCpus) == num {
 				break
 			}
