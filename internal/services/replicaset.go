@@ -54,6 +54,11 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
+	// limit rootfs
+	hostConfig.StorageOpt = map[string]string{
+		"size": "30G",
+	}
+
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
 		hostConfig.PortBindings = make(nat.PortMap, len(spec.ContainerPorts))
