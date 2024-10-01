@@ -3,8 +3,10 @@ package routers
 type ResCode int64
 
 const (
-	CodeSuccess                                      ResCode = 200
-	CodeServeBusy                                    ResCode = 500
+	CodeSuccess   ResCode = 200
+	CodeServeBusy ResCode = 500
+	CodeForbidden ResCode = 403
+
 	CodeInvalidParams                                ResCode = 1000
 	CodeImageNameCannotBeEmpty                       ResCode = 1001
 	CodeContainerNameCannotBeEmpty                   ResCode = 1002
@@ -48,8 +50,10 @@ const (
 )
 
 var codeMsgMap = map[ResCode]string{
-	CodeSuccess:                                      "Success",
-	CodeServeBusy:                                    "Server busy",
+	CodeSuccess:   "Success",
+	CodeServeBusy: "Server busy",
+	CodeForbidden: "Forbidden",
+
 	CodeInvalidParams:                                "Failed to parse body",
 	CodeImageNameCannotBeEmpty:                       "Image name cannot be empty",
 	CodeContainerNameCannotBeEmpty:                   "Container name cannot be empty",
