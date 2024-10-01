@@ -10,6 +10,7 @@ type Resource struct{}
 
 func (gh *Resource) RegisterRoute(g *gin.RouterGroup) {
 	g.GET("/resources/gpus", gh.GetGpus)
+	g.GET("/resources/cpus", gh.GetCpus)
 	g.GET("resources/ports", gh.GetPorts)
 }
 
@@ -18,6 +19,13 @@ func (gh *Resource) GetGpus(c *gin.Context) {
 	gpus := schedulers.GpuScheduler.GetGpuStatus()
 	ResponseSuccess(c, gin.H{
 		"gpus": gpus,
+	})
+}
+
+func (gh *Resource) GetCpus(c *gin.Context) {
+	cpus := schedulers.CpuScheduler.GetCpuStatus()
+	ResponseSuccess(c, gin.H{
+		"cpus": cpus,
 	})
 }
 
