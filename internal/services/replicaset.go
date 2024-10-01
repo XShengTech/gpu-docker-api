@@ -318,6 +318,22 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 		return "", errors.WithMessage(err, "patchGpu failed")
 	}
 
+	// compare cpu info
+	info, err = rs.patchCpu(ctrVersionName, &models.CpuPatch{
+		CpuCount: len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")),
+	}, info)
+	if err != nil {
+		return "", errors.WithMessage(err, "patchCpu failed")
+	}
+
+	// compare memory info
+	info, err = rs.patchMemory(ctrVersionName, &models.MemoryPatch{
+		Memory: fmt.Sprintf("%d", info.HostConfig.Resources.Memory),
+	}, info)
+	if err != nil {
+		return "", errors.WithMessage(err, "patchMemory failed")
+	}
+
 	// create a new container to replace the old one
 	_, newContainerName, kv, err := rs.runContainer(context.TODO(), name, info)
 	if err != nil {
