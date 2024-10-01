@@ -140,7 +140,7 @@ func getAllCpuProcessors() ([]string, error) {
 	}
 
 	var cpuList []string
-	cpuNum, err := strconv.Atoi(c.Stdout())
+	cpuNum, err := strconv.Atoi(strings.Trim(c.Stdout(), "\n"))
 	if err != nil {
 		return nil, errors.Wrap(err, "strconv.Atoi failed")
 	}
