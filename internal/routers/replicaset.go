@@ -131,12 +131,14 @@ func (rh *ReplicaSetHandler) Run(c *gin.Context) {
 		return
 	}
 
-	spec.Memory = strings.ToUpper(spec.Memory)
-	unit := spec.Memory[len(spec.Memory)-2:]
-	if _, ok := models.VolumeSizeMap[unit]; !ok {
-		log.Errorf("failed to Patch volume size, size: %s is not supported", spec.Memory)
-		ResponseError(c, CodeContainerMemorySizeNotSupported)
-		return
+	if spec.Memory != "" {
+		spec.Memory = strings.ToUpper(spec.Memory)
+		unit := spec.Memory[len(spec.Memory)-2:]
+		if _, ok := models.VolumeSizeMap[unit]; !ok {
+			log.Errorf("failed to Patch volume size, size: %s is not supported", spec.Memory)
+			ResponseError(c, CodeContainerMemorySizeNotSupported)
+			return
+		}
 	}
 
 	if strings.Contains(spec.ReplicaSetName, "-") {
