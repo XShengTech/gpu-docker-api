@@ -30,6 +30,15 @@ import (
 	"github.com/mayooot/gpu-docker-api/utils"
 )
 
+var lxcfsBind = []string{
+	"/var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:rw",
+	"/var/lib/lxcfs/proc/diskstats:/proc/diskstats:rw",
+	"/var/lib/lxcfs/proc/meminfo:/proc/meminfo:rw",
+	"/var/lib/lxcfs/proc/stat:/proc/stat:rw",
+	"/var/lib/lxcfs/proc/swaps:/proc/swaps:rw",
+	"/var/lib/lxcfs/proc/uptime:/proc/uptime:rw",
+}
+
 type ReplicaSetService struct{}
 
 // RunGpuContainer just sets the parameters, the real run a container is in the `runContainer`
@@ -54,10 +63,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
-	// // limit rootfs
-	// hostConfig.StorageOpt = map[string]string{
-	// 	"size": "30G",
-	// }
+	// limit rootfs
+	hostConfig.StorageOpt = map[string]string{
+		"size": "30G",
+	}
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -98,11 +107,12 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	}
 
 	// bind volume
-	hostConfig.Binds = make([]string, 0, len(spec.Binds))
+	hostConfig.Binds = make([]string, 0, len(spec.Binds)+len(lxcfsBind))
 	for i := range spec.Binds {
 		// Binds
 		hostConfig.Binds = append(hostConfig.Binds, fmt.Sprintf("%s:%s", spec.Binds[i].Src, spec.Binds[i].Dest))
 	}
+	hostConfig.Binds = append(hostConfig.Binds, lxcfsBind...)
 
 	// create and start
 	id, containerName, kv, err := rs.runContainer(ctx, spec.ReplicaSetName, &models.EtcdContainerInfo{
