@@ -54,10 +54,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
-	// limit rootfs
-	hostConfig.StorageOpt = map[string]string{
-		"size": "30G",
-	}
+	// // limit rootfs
+	// hostConfig.StorageOpt = map[string]string{
+	// 	"size": "30G",
+	// }
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -451,7 +451,7 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		if err != nil {
 			return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
 		}
-		info.HostConfig.Resources.CpusetCpus = cpusets
+		info.HostConfig.Resources.CpusetCpus = cpuset + "," + cpusets
 		log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
 			name, applyCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 	} else {
