@@ -63,10 +63,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
-	// limit rootfs
-	hostConfig.StorageOpt = map[string]string{
-		"size": "30G",
-	}
+	// // limit rootfs
+	// hostConfig.StorageOpt = map[string]string{
+	// 	"size": "30G",
+	// }
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -663,6 +663,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 
 	// check whether the container is using gpu
 	if len(uuids) != 0 {
+		schedulers.GpuScheduler.Restore(uuids)
 		// apply for gpu
 		availableGpus, err := schedulers.GpuScheduler.Apply(len(uuids))
 		if err != nil {
