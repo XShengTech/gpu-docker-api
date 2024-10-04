@@ -111,11 +111,11 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	return cpuSet, nil
 }
 
-func (cs *cpuScheduler) Restore(cpuSet string) error {
+func (cs *cpuScheduler) Restore(cpuSet []string) error {
 	cs.Lock()
 	defer cs.Unlock()
 
-	for _, cpu := range strings.Split(cpuSet, ",") {
+	for _, cpu := range cpuSet {
 		cs.CpuStatusMap[cpu] = 0
 	}
 

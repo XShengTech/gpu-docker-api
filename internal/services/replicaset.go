@@ -448,28 +448,27 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
-	cpuCount := strings.Split(cpuset, ",")
-	if len(cpuCount) == spec.CpuCount {
+	if len(cpuset) == spec.CpuCount {
 		return info, nil
 	}
 
-	if spec.CpuCount > len(cpuCount) {
+	if spec.CpuCount > len(cpuset) {
 		// lift cpu configuration
-		applyCpus := spec.CpuCount - len(cpuCount)
+		applyCpus := spec.CpuCount - len(cpuset)
 		cpusets, err := schedulers.CpuScheduler.Apply(applyCpus)
 		log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, applyCpus, cpusets)
 		if err != nil {
 			return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
 		}
-		info.HostConfig.Resources.CpusetCpus = cpuset + "," + cpusets
+		info.HostConfig.Resources.CpusetCpus = strings.TrimLeft(strings.Trim(strings.Trim(strings.Join(cpuset, ","), ",")+","+cpusets, ","), ",")
 		log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
 			name, applyCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 	} else {
-		restoreCpus := len(cpuCount) - spec.CpuCount
-		schedulers.CpuScheduler.Restore(strings.Trim(strings.Join(cpuCount[:restoreCpus], ","), ","))
+		restoreCpus := len(cpuset) - spec.CpuCount
+		schedulers.CpuScheduler.Restore(cpuset[:restoreCpus])
 		log.Infof("services.PatchContainerCpuInfo, container: %s restore %d cpus, cpusets: %+v",
-			name, len(cpuCount[:restoreCpus]), cpuCount[:restoreCpus])
-		info.HostConfig.Resources.CpusetCpus = strings.Trim(strings.Join(cpuCount[restoreCpus:], ","), ",")
+			name, len(cpuset[:restoreCpus]), cpuset[:restoreCpus])
+		info.HostConfig.Resources.CpusetCpus = strings.Trim(strings.Join(cpuset[restoreCpus:], ","), ",")
 		log.Infof("services.PatchContainerCpuInfo, container: %s reduce %d cpu configuration, now use %d cpus, cpusets: %+v",
 			name, restoreCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 	}
@@ -877,6 +876,9 @@ func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]st
 	if err != nil {
 		return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
+	if !resp.State.Running {
+		return []string{}, nil
+	}
 	if resp.HostConfig.DeviceRequests == nil {
 		return []string{}, nil
 	}
@@ -899,13 +901,16 @@ func (rs *ReplicaSetService) containerPortBindings(name string) ([]string, error
 	return ports, nil
 }
 
-func (rs *ReplicaSetService) containerCpusetCpus(name string) (string, error) {
+func (rs *ReplicaSetService) containerCpusetCpus(name string) ([]string, error) {
 	ctx := context.Background()
 	resp, err := docker.Cli.ContainerInspect(ctx, name)
 	if err != nil {
-		return "", errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+		return []string{}, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.HostConfig.Resources.CpusetCpus, nil
+	if !resp.State.Running {
+		return []string{}, nil
+	}
+	return strings.Split(resp.HostConfig.Resources.CpusetCpus, ","), nil
 }
 
 func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
