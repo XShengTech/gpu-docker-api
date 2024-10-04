@@ -1,6 +1,6 @@
 module github.com/mayooot/gpu-docker-api
 
-go 1.21.4
+go 1.23
 
 require (
 	github.com/commander-cli/cmd v1.6.0

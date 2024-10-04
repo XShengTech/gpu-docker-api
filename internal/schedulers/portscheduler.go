@@ -2,6 +2,7 @@ package schedulers
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,25 +74,28 @@ func initPortFormEtcd() (s *portScheduler, err error) {
 // Apply for a specified number of ports
 func (ps *portScheduler) Apply(num int) ([]string, error) {
 	if num <= 0 || num > ps.AvailableCount {
-		return nil, errors.New("num must be greater than 0 and less than " + strconv.Itoa(ps.AvailableCount))
+		return nil, errors.New("num must be greater than 0 and less than or equal to " + strconv.Itoa(ps.AvailableCount))
 	}
 
 	ps.Lock()
 	defer ps.Unlock()
 
-	var availablePorts []string
-	for i := ps.StartPort; i <= ps.EndPort; i++ {
-		if _, ok := ps.UsedPortSet[strconv.Itoa(i)]; !ok {
-			ps.UsedPortSet[strconv.Itoa(i)] = struct{}{}
-			availablePorts = append(availablePorts, strconv.Itoa(i))
-			if len(availablePorts) == num {
-				break
-			}
-		}
+	// 检查剩余可用端口数是否足够
+	availablePortCount := ps.EndPort - ps.StartPort + 1 - len(ps.UsedPortSet)
+	if num > availablePortCount {
+		return nil, xerrors.NewPortNotEnoughError()
 	}
 
-	if len(availablePorts) < num {
-		return nil, xerrors.NewPortNotEnoughError()
+	var availablePorts []string
+	portRange := ps.EndPort - ps.StartPort + 1
+
+	for len(availablePorts) < num {
+		randomPort := rand.IntN(portRange) + ps.StartPort
+		portStr := strconv.Itoa(randomPort)
+		if _, ok := ps.UsedPortSet[portStr]; !ok {
+			ps.UsedPortSet[portStr] = struct{}{}
+			availablePorts = append(availablePorts, portStr)
+		}
 	}
 
 	return availablePorts, nil
