@@ -471,7 +471,7 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 			name, len(cpuCount[:restoreCpus]), cpuCount[:restoreCpus])
 		info.HostConfig.Resources.CpusetCpus = strings.Trim(strings.Join(cpuCount[restoreCpus:], ","), ",")
 		log.Infof("services.PatchContainerCpuInfo, container: %s reduce %d cpu configuration, now use %d cpus, cpusets: %+v",
-			name, restoreCpus, len(info.HostConfig.Resources.CpusetCpus), info.HostConfig.Resources.CpusetCpus)
+			name, restoreCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 	}
 
 	return info, nil
