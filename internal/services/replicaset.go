@@ -63,10 +63,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
-	// // limit rootfs
-	// hostConfig.StorageOpt = map[string]string{
-	// 	"size": "30G",
-	// }
+	// limit rootfs
+	hostConfig.StorageOpt = map[string]string{
+		"size": "30G",
+	}
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -272,7 +272,7 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	}
 
 	// copy the old container's merged files to the new container
-	err = utils.CopyOldMergedToNewContainerMerged(info.ContainerName, newContainerName)
+	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
 	}
@@ -679,7 +679,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	}
 
 	// copy the old container's merged files to the new container
-	err = utils.CopyOldMergedToNewContainerMerged(info.ContainerName, newContainerName)
+	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
 	}
@@ -703,7 +703,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	}
 
 	log.Infof("services.RestartContainer, container restart successfully, "+
-		"old container name: %s, new container name: %s, "+
+		"old container name: %s, new container name: %s, ",
 		ctrVersionName, newContainerName)
 	return
 }

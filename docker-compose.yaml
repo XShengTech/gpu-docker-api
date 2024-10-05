@@ -49,4 +49,5 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /etc/localtime:/etc/localtime:ro
+      - PATH_TO_DOCKER_STORAGE:PATH_TO_DOCKER_STORAGE
       - gpu-docker-api-data:/data/merges
