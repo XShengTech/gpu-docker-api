@@ -99,7 +99,7 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 
 	// bind memory resource
 	if spec.Memory != "" {
-		memory, err := models.MemoryGetBytes(spec.Memory)
+		memory, err := utils.ToBytes(spec.Memory)
 		if err != nil {
 			return id, containerName, errors.Wrapf(err, "MemoryGetBytes failed, spec: %+v", spec)
 		}
@@ -485,7 +485,7 @@ func (rs *ReplicaSetService) patchMemory(name string, spec *models.MemoryPatch, 
 		return info, errors.WithMessage(err, "services.containerMemory failed")
 	}
 
-	applymemory, err := models.MemoryGetBytes(spec.Memory)
+	applymemory, err := utils.ToBytes(spec.Memory)
 	if err != nil {
 		return info, errors.WithMessage(err, "models.MemoryGetBytes failed")
 	}
