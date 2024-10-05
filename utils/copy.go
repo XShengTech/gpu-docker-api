@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/commander-cli/cmd"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/docker"
@@ -37,15 +39,24 @@ func CopyOldMergedToNewContainerMerged(oldContainer, newContainer string) error 
 	if err = CopyDir(oldMerged, newMerged); err != nil {
 		return errors.WithMessage(err, "copyDir failed")
 	}
+
+	// It must has to do this for Restart Container. DON'T USE RESTART API
+	if err = docker.Cli.ContainerStop(context.TODO(), newContainer, container.StopOptions{}); err != nil {
+		return errors.Wrapf(err, "docker.ContainerStop failed, container: %s", newContainer)
+	}
+	if err = docker.Cli.ContainerStart(context.TODO(), newContainer, types.ContainerStartOptions{}); err != nil {
+		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", newContainer)
+	}
+
 	return nil
 }
 
 func GetContainerMergedLayer(name string) (string, error) {
 	resp, err := docker.Cli.ContainerInspect(context.TODO(), name)
-	if err != nil || len(resp.GraphDriver.Data["MergedDir"]) == 0 {
+	if err != nil || len(resp.GraphDriver.Data["UpperDir"]) == 0 {
 		return "", errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.GraphDriver.Data["MergedDir"], nil
+	return resp.GraphDriver.Data["UpperDir"], nil
 }
 
 // CopyOldMountPointToContainerMountPoint is used to copy the volume data from the old container
