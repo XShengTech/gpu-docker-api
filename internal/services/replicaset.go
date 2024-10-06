@@ -63,10 +63,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Tty:       true,
 	}
 
-	// limit rootfs
-	hostConfig.StorageOpt = map[string]string{
-		"size": "30G",
-	}
+	// // limit rootfs
+	// hostConfig.StorageOpt = map[string]string{
+	// 	"size": "30G",
+	// }
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -159,6 +159,11 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 		return errors.WithMessage(err, "services.containerPortBindings failed")
 	}
 	schedulers.PortScheduler.Restore(ports)
+
+	err = deleteMergeMap(name)
+	if err != nil {
+		return errors.WithMessage(err, "deleteMergeMap failed")
+	}
 
 	// delete the version number and asynchronously delete the container info in etcd
 	vmap.ContainerVersionMap.Remove(strings.Split(name, "-")[0])
@@ -613,6 +618,17 @@ func setToMergeMap(name string, version int64) error {
 		return errors.WithMessagef(err, "utils.CopyDir failed, container: %s", name)
 	}
 	vmap.ContainerMergeMap.Set(version, path)
+	return nil
+}
+
+func deleteMergeMap(name string) error {
+	layer := "merges"
+	dir, _ := os.Getwd()
+	path := filepath.Join(dir, layer, strings.Split(name, "-")[0])
+	err := os.RemoveAll(path)
+	if err != nil {
+		return errors.WithMessagef(err, "remove container merge layer failed, path: %s", path)
+	}
 	return nil
 }
 
