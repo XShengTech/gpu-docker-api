@@ -326,8 +326,12 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 
 	// compare gpu info
 	ctrVersionName := fmt.Sprintf("%s-%d", name, version)
+	gpucount := 0
+	if len(info.HostConfig.Resources.DeviceRequests) > 0 {
+		gpucount = len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+	}
 	info, err = rs.patchGpu(ctrVersionName, &models.GpuPatch{
-		GpuCount: len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs),
+		GpuCount: gpucount,
 	}, info)
 	if err != nil {
 		return "", errors.WithMessage(err, "patchGpu failed")
@@ -343,7 +347,7 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 
 	// compare memory info
 	info, err = rs.patchMemory(ctrVersionName, &models.MemoryPatch{
-		Memory: fmt.Sprintf("%d", info.HostConfig.Resources.Memory),
+		Memory: fmt.Sprintf("%dGB", info.HostConfig.Resources.Memory/1024/1024),
 	}, info)
 	if err != nil {
 		return "", errors.WithMessage(err, "patchMemory failed")
