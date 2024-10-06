@@ -360,16 +360,7 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 	}
 
 	// copy the old container's merged files to the new container
-	src, ok := vmap.ContainerMergeMap.Get(info.Version)
-	if !ok {
-		return "", errors.Errorf("container: %s version: %d merge path not found in ContainerMergeMap", info.ContainerName, info.Version)
-	}
-	dest, err := utils.GetContainerMergedLayer(newContainerName)
-	if err != nil {
-		return "", errors.WithMessage(err, "utils.GetContainerMergedLayer failed")
-	}
-
-	err = utils.CopyDir(src, dest)
+	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return "", errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
 	}
