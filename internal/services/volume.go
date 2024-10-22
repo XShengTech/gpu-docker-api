@@ -151,11 +151,11 @@ func (vs *VolumeService) PatchVolumeSize(name string, spec *models.VolumeSize) (
 		return resp, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
 	}
 
-	// delete the old volume
-	err = vs.DeleteVolume(volVersionName, false, false)
-	if err != nil {
-		return resp, errors.WithMessage(err, "services.DeleteVolume failed")
-	}
+	// // delete the old volume
+	// err = vs.DeleteVolume(resp.Name, false, false)
+	// if err != nil {
+	// 	return resp, errors.WithMessage(err, "services.DeleteVolume failed")
+	// }
 
 	workQueue.Queue <- etcd.PutKeyValue{
 		Resource: etcd.Volumes,
