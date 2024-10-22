@@ -146,7 +146,7 @@ func (vs *VolumeService) PatchVolumeSize(name string, spec *models.VolumeSize) (
 		return resp, errors.WithMessage(err, "services.createVolume failed")
 	}
 
-	err = utils.CopyOldMountPointToContainerMountPoint(resp.Name, resp.Name)
+	err = utils.CopyOldMountPointToContainerMountPoint(volVersionName, resp.Name)
 	if err != nil {
 		return resp, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
 	}

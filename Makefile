@@ -4,7 +4,7 @@ PLATFORM = linux/amd64
 
 BRANCH = $(shell git rev-parse --abbrev-ref HEAD)
 VERSION = $(shell git describe --tags | cut -d'-' -f1)
-COMMIT = $(shell git rev-parse HEAD)
+COMMIT = $(shell git rev-parse --short HEAD)
 GO_VERSION = $(shell go env GOVERSION)
 BUILD_TIME = $(shell date +%FT%T%z)
 
@@ -13,7 +13,7 @@ CURRENT_DIR = $(shell pwd)
 BUILD_DIR = ${CURRENT_DIR}/cmd/${BINARY}
 BIN_DIR= ${CURRENT_DIR}/bin
 
-LDFLAGS = -ldflags "-X main.BRANCH=${BRANCH} -X main.VERSION=${VERSION} -X main.COMMIT=${COMMIT} -X main.GoVersion=${GO_VERSION} -X main.BuildTime=${BUILD_TIME}"
+LDFLAGS = -ldflags "-s -w -X main.BRANCH=${BRANCH} -X main.VERSION=${VERSION} -X main.COMMIT=${COMMIT} -X main.GoVersion=${GO_VERSION} -X main.BuildTime=${BUILD_TIME}"
 
 all: fmt imports clean linux darwin windows
 
