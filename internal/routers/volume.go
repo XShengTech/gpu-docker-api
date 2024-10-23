@@ -120,7 +120,13 @@ func (vh *VolumeHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := vs.DeleteVolume(name, true, true); err != nil {
+	noall := c.Query("noall")
+	lr := true
+	if len(noall) != 0 {
+		lr = false
+	}
+
+	if err := vs.DeleteVolume(name, lr, lr); err != nil {
 		log.Errorf("services.DeleteVolume failed, original error: %T %v", errors.Cause(err), err)
 		log.Errorf("stack trace: \n%+v\n", err)
 		ResponseError(c, CodeVolumeDeleteFailed)
