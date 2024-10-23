@@ -661,6 +661,12 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		return id, newContainerName, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
+	// get info about used cpus
+	cpus, err := rs.containerCpusetCpus(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "services.containerCpusetCpus failed")
+	}
+
 	// get creation info from etcd
 	infoBytes, err := etcd.GetValue(etcd.Containers, name)
 	if err != nil {
@@ -681,6 +687,18 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		}
 		log.Infof("services.RestartContainer, container: %s apply %d gpus, uuids: %+v", ctrVersionName, len(availableGpus), availableGpus)
 		info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = availableGpus
+	}
+
+	// check whether the container is using cpu
+	if len(cpus) != 0 {
+		schedulers.CpuScheduler.Restore(cpus)
+		// apply for cpu
+		availableCpus, err := schedulers.CpuScheduler.Apply(len(cpus))
+		if err != nil {
+			return id, newContainerName, errors.WithMessage(err, "CpuScheduler.Apply failed")
+		}
+		log.Infof("services.RestartContainer, container: %s apply %d cpus, cpusets: %+v", ctrVersionName, len(strings.Split(availableCpus, ",")), availableCpus)
+		info.HostConfig.Resources.CpusetCpus = availableCpus
 	}
 
 	//  create a container to replace the old one
@@ -887,9 +905,6 @@ func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]st
 	if err != nil {
 		return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	if !resp.State.Running {
-		return []string{}, nil
-	}
 	if resp.HostConfig.DeviceRequests == nil {
 		return []string{}, nil
 	}
@@ -917,9 +932,6 @@ func (rs *ReplicaSetService) containerCpusetCpus(name string) ([]string, error) 
 	resp, err := docker.Cli.ContainerInspect(ctx, name)
 	if err != nil {
 		return []string{}, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
-	}
-	if !resp.State.Running {
-		return []string{}, nil
 	}
 	return strings.Split(resp.HostConfig.Resources.CpusetCpus, ","), nil
 }
