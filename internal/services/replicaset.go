@@ -67,6 +67,8 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	hostConfig.StorageOpt = map[string]string{
 		"size": "30G",
 	}
+	shmSize, _ := utils.ToBytes("256GB")
+	hostConfig.ShmSize = shmSize
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
