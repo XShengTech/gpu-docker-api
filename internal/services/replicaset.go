@@ -656,6 +656,11 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	}
 	ctrVersionName := fmt.Sprintf("%s-%d", name, version)
 
+	running, err := rs.containerStatusRunning(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "services.containerStatusRunning failed")
+	}
+
 	// get info about used gpus
 	ctx := context.Background()
 	uuids, err := rs.containerDeviceRequestsDeviceIDs(ctrVersionName)
@@ -681,7 +686,9 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 
 	// check whether the container is using gpu
 	if len(uuids) != 0 {
-		schedulers.GpuScheduler.Restore(uuids)
+		if running {
+			schedulers.GpuScheduler.Restore(uuids)
+		}
 		// apply for gpu
 		availableGpus, err := schedulers.GpuScheduler.Apply(len(uuids))
 		if err != nil {
@@ -693,7 +700,9 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 
 	// check whether the container is using cpu
 	if len(cpus) != 0 {
-		schedulers.CpuScheduler.Restore(cpus)
+		if running {
+			schedulers.CpuScheduler.Restore(cpus)
+		}
 		// apply for cpu
 		availableCpus, err := schedulers.CpuScheduler.Apply(len(cpus))
 		if err != nil {
@@ -899,6 +908,15 @@ func (rs *ReplicaSetService) existContainer(name string) bool {
 	}
 
 	return len(list) > 0
+}
+
+func (rs *ReplicaSetService) containerStatusRunning(name string) (bool, error) {
+	ctx := context.Background()
+	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return false, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+	}
+	return resp.State.Running, nil
 }
 
 func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]string, error) {
