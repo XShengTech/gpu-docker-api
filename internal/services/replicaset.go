@@ -393,6 +393,15 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 	if spec == nil {
 		return info, nil
 	}
+	running, err := rs.containerStatusRunning(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerStatusRunning failed")
+	}
+	pause, err := rs.containerStatusPaused(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerStatusPaused failed")
+	}
+
 	uuids, err := rs.containerDeviceRequestsDeviceIDs(name)
 	if err != nil {
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
@@ -423,7 +432,9 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		}
 	} else {
 		restoreGpus := len(uuids) - spec.GpuCount
-		schedulers.GpuScheduler.Restore(uuids[:restoreGpus])
+		if running || pause {
+			schedulers.GpuScheduler.Restore(uuids[:restoreGpus])
+		}
 		log.Infof("services.PatchContainerGpuInfo, container: %s restore %d gpus, uuids: %+v",
 			name, len(uuids[:restoreGpus]), uuids[:restoreGpus])
 		if len(uuids[:spec.GpuCount]) == 0 {
@@ -445,6 +456,15 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 	if spec == nil {
 		return info, nil
 	}
+	running, err := rs.containerStatusRunning(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerStatusRunning failed")
+	}
+	pause, err := rs.containerStatusPaused(name)
+	if err != nil {
+		return info, errors.WithMessage(err, "services.containerStatusPaused failed")
+	}
+
 	cpuset, err := rs.containerCpusetCpus(name)
 	if err != nil {
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
@@ -467,7 +487,9 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 			name, applyCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 	} else {
 		restoreCpus := len(cpuset) - spec.CpuCount
-		schedulers.CpuScheduler.Restore(cpuset[:restoreCpus])
+		if running || pause {
+			schedulers.CpuScheduler.Restore(cpuset[:restoreCpus])
+		}
 		log.Infof("services.PatchContainerCpuInfo, container: %s restore %d cpus, cpusets: %+v",
 			name, len(cpuset[:restoreCpus]), cpuset[:restoreCpus])
 		info.HostConfig.Resources.CpusetCpus = strings.Trim(strings.Join(cpuset[restoreCpus:], ","), ",")
@@ -660,6 +682,10 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "services.containerStatusRunning failed")
 	}
+	pause, err := rs.containerStatusPaused(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "services.containerStatusPaused failed")
+	}
 
 	// get info about used gpus
 	ctx := context.Background()
@@ -686,7 +712,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 
 	// check whether the container is using gpu
 	if len(uuids) != 0 {
-		if running {
+		if running || pause {
 			schedulers.GpuScheduler.Restore(uuids)
 		}
 		// apply for gpu
@@ -917,6 +943,15 @@ func (rs *ReplicaSetService) containerStatusRunning(name string) (bool, error) {
 		return false, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
 	return resp.State.Running, nil
+}
+
+func (rs *ReplicaSetService) containerStatusPaused(name string) (bool, error) {
+	ctx := context.Background()
+	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return false, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+	}
+	return resp.State.Paused, nil
 }
 
 func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]string, error) {
