@@ -99,6 +99,7 @@ func (gs *gpuScheduler) Apply(num int) ([]string, error) {
 	}
 
 	if len(availableGpus) < num {
+		gs.Restore(availableGpus)
 		return nil, xerrors.NewGpuNotEnoughError()
 	}
 

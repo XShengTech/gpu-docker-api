@@ -103,6 +103,7 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	}
 
 	if len(applyCpus) < num {
+		cs.Restore(applyCpus)
 		return "", xerrors.NewCpuNotEnoughError()
 	}
 
