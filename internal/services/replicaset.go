@@ -474,20 +474,19 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		return info, nil
 	}
 
-	applyCpus := len(cpuset)
 	if running || pause {
 		schedulers.CpuScheduler.Restore(cpuset)
 		log.Infof("services.PatchContainerCpuInfo, container: %s restore %d cpus, cpusets: %+v",
-			name, applyCpus, cpuset)
+			name, len(cpuset), cpuset)
 	}
-	cpusets, err := schedulers.CpuScheduler.Apply(applyCpus)
-	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, applyCpus, cpusets)
+	cpusets, err := schedulers.CpuScheduler.Apply(spec.CpuCount)
+	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, spec.CpuCount, cpusets)
 	if err != nil {
 		return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
 	}
 	info.HostConfig.Resources.CpusetCpus = strings.TrimLeft(strings.Trim(cpusets, ","), ",")
 	log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
-		name, applyCpus, len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
+		name, len(cpuset), len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
 
 	return info, nil
 }
