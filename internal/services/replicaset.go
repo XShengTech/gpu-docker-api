@@ -87,6 +87,7 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 			return id, containerName, errors.Wrapf(err, "GpuScheduler.Apply failed, spec: %+v", spec)
 		}
 		hostConfig.Resources = rs.newContainerResource(uuids)
+		schedulers.GpuScheduler.Alloc(spec.ReplicaSetName, uuids)
 		log.Infof("services.RunGpuContainer, container: %s apply %d gpus, uuids: %+v", spec.ReplicaSetName+"-0", len(uuids), uuids)
 	}
 
@@ -149,6 +150,7 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 		return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 	schedulers.GpuScheduler.Restore(uuids)
+	schedulers.GpuScheduler.Dealloc(name)
 
 	cpusets, err := rs.containerCpusetCpus(ctrVersionName)
 	if err != nil {
@@ -411,6 +413,10 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		return info, nil
 	}
 
+	oldUuids := uuids
+	replicaSetName := strings.Split(name, "-")[0]
+	schedulers.GpuScheduler.Dealloc(replicaSetName)
+
 	if spec.GpuCount > len(uuids) {
 		// lift gpu configuration
 		applyGpus := spec.GpuCount - len(uuids)
@@ -421,14 +427,16 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		}
 		if applyGpus == spec.GpuCount {
 			// no gpu was used before.
-			info.HostConfig.Resources = rs.newContainerResource(uuids)
+			schedulers.GpuScheduler.Alloc(replicaSetName, uuids)
+			deviceIDs, _ := schedulers.GpuScheduler.GetAllocGpus(replicaSetName)
 			log.Infof("services.PatchContainerGpuInfo, container: %s change to card container, now use %d gpus, uuids: %s",
-				name, len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs), info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+				name, len(deviceIDs), deviceIDs)
 		} else {
 			// before using gpu
-			info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = append(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs, uuids...)
+			schedulers.GpuScheduler.Alloc(replicaSetName, append(oldUuids, uuids...))
+			deviceIDs, _ := schedulers.GpuScheduler.GetAllocGpus(replicaSetName)
 			log.Infof("services.PatchContainerGpuInfo, container: %s upgrad %d gpu configuration, now use %d gpus, uuids: %+v",
-				name, applyGpus, len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs), info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+				name, applyGpus, len(deviceIDs), deviceIDs)
 		}
 	} else {
 		restoreGpus := len(uuids) - spec.GpuCount
@@ -439,11 +447,11 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		}
 		if len(uuids[:spec.GpuCount]) == 0 {
 			// change to no using gpu
-			info.HostConfig.Resources = container.Resources{}
+			schedulers.GpuScheduler.Alloc(replicaSetName, []string{})
 			log.Infof("services.PatchContainerGpuInfo, container: %s change to cardless container", name)
 		} else {
 			// lower gpu configuration
-			info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = uuids[restoreGpus:]
+			schedulers.GpuScheduler.Alloc(replicaSetName, uuids[restoreGpus:])
 			log.Infof("services.PatchContainerGpuInfo, container: %s reduce %d gpu configuration, now use %d gpus, uuids: %+v",
 				name, restoreGpus, len(uuids[:restoreGpus]), uuids[:restoreGpus])
 		}
@@ -701,6 +709,9 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		return id, newContainerName, errors.WithMessage(err, "json.Unmarshal failed")
 	}
 
+	shmSize, _ := utils.ToBytes("256GB")
+	info.HostConfig.ShmSize = shmSize
+
 	// check whether the container is using gpu
 	if len(uuids) != 0 {
 		if running || pause {
@@ -712,7 +723,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 			return id, newContainerName, errors.WithMessage(err, "GpuScheduler.Apply failed")
 		}
 		log.Infof("services.RestartContainer, container: %s apply %d gpus, uuids: %+v", ctrVersionName, len(availableGpus), availableGpus)
-		info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = availableGpus
+		schedulers.GpuScheduler.Alloc(name, availableGpus)
 	}
 
 	// check whether the container is using cpu
@@ -946,15 +957,17 @@ func (rs *ReplicaSetService) containerStatusPaused(name string) (bool, error) {
 }
 
 func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]string, error) {
-	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
-	if err != nil {
-		return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
-	}
-	if resp.HostConfig.DeviceRequests == nil {
-		return []string{}, nil
-	}
-	return resp.HostConfig.DeviceRequests[0].DeviceIDs, nil
+	// ctx := context.Background()
+	// resp, err := docker.Cli.ContainerInspect(ctx, name)
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
+	// }
+	// if resp.HostConfig.DeviceRequests == nil {
+	// 	return []string{}, nil
+	// }
+	replicaSetName := strings.Split(name, "-")[0]
+	uuids, _ := schedulers.GpuScheduler.GetAllocGpus(replicaSetName)
+	return uuids, nil
 }
 
 func (rs *ReplicaSetService) containerPortBindings(name string) ([]string, error) {
@@ -993,10 +1006,13 @@ func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
 
 func (rs *ReplicaSetService) newContainerResource(uuids []string) container.Resources {
 	return container.Resources{
-		DeviceRequests: []container.DeviceRequest{{
-			Driver:       "nvidia",
-			DeviceIDs:    uuids,
-			Capabilities: [][]string{{"gpu"}},
-			Options:      nil,
-		}}}
+		// DeviceRequests: []container.DeviceRequest{
+		// 	{
+		// 		Driver:       "nvidia",
+		// 		DeviceIDs:    uuids,
+		// 		Capabilities: [][]string{{"gpu"}},
+		// 		Options:      nil,
+		// 	},
+		// },
+	}
 }

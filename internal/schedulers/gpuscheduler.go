@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/commander-cli/cmd"
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
@@ -29,8 +28,9 @@ type gpu struct {
 type gpuScheduler struct {
 	sync.RWMutex
 
-	AvailableGpuNums int             `json:"availableGpuNums"`
-	GpuStatusMap     map[string]byte `json:"gpuStatusMap"`
+	AvailableGpuNums int                 `json:"availableGpuNums"`
+	GpuStatusMap     map[string]byte     `json:"gpuStatusMap"`
+	GpuAllocMap      map[string][]string `json:"gpuAllocMap"`
 }
 
 func InitGPuScheduler() error {
@@ -71,6 +71,7 @@ func initGpuFormEtcd() (s *gpuScheduler, err error) {
 
 	s = &gpuScheduler{
 		GpuStatusMap: make(map[string]byte),
+		GpuAllocMap:  make(map[string][]string),
 	}
 	if len(bytes) != 0 {
 		err = json.Unmarshal(bytes, &s)
@@ -141,17 +142,69 @@ func (gs *gpuScheduler) GetGpuStatus() map[string]byte {
 	return copyMap
 }
 
-func getAllGpuUUID() ([]*gpu, error) {
-	c := cmd.NewCommand(allGpuUUIDCommand)
-	err := c.Execute()
-	if err != nil {
-		return nil, errors.Wrap(err, "cmd.Execute failed")
+func (gs *gpuScheduler) Alloc(name string, gpus []string) {
+	gs.Lock()
+	defer gs.Unlock()
+
+	gs.GpuAllocMap[name] = gpus
+}
+
+func (gs *gpuScheduler) Dealloc(name string) {
+	gs.Lock()
+	defer gs.Unlock()
+
+	delete(gs.GpuAllocMap, name)
+}
+
+func (gs *gpuScheduler) GetAllocMap() map[string][]string {
+	gs.RLock()
+	defer gs.RUnlock()
+
+	copyMap := make(map[string][]string, len(gs.GpuAllocMap))
+	for k, v := range gs.GpuAllocMap {
+		copyMap[k] = v
 	}
 
-	gpuList, err := parseOutput(c.Stdout())
-	if err != nil {
-		return nil, errors.Wrap(err, "parseOutput failed")
+	return copyMap
+}
+
+func (gs *gpuScheduler) GetAllocGpus(name string) ([]string, bool) {
+	gs.RLock()
+	defer gs.RUnlock()
+
+	gpus, ok := gs.GpuAllocMap[name]
+	return gpus, ok
+}
+
+func getAllGpuUUID() ([]*gpu, error) {
+	// c := cmd.NewCommand(allGpuUUIDCommand)
+	// err := c.Execute()
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "cmd.Execute failed")
+	// }
+
+	// gpuList, err := parseOutput(c.Stdout())
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "parseOutput failed")
+	// }
+	uuids := []string{
+		"GPU-0",
+		"GPU-1",
+		"GPU-2",
+		"GPU-3",
+		"GPU-4",
+		"GPU-5",
+		"GPU-6",
+		"GPU-7",
 	}
+	gpuList := []*gpu{}
+	for i, uuid := range uuids {
+		gpuList = append(gpuList, &gpu{
+			Index: i,
+			UUID:  &uuid,
+		})
+	}
+
 	return gpuList, nil
 }
 
