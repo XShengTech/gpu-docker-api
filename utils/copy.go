@@ -7,6 +7,8 @@ import (
 	"github.com/commander-cli/cmd"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/docker"
@@ -62,17 +64,8 @@ func GetContainerMergedLayer(name string) (string, error) {
 // CopyOldMountPointToContainerMountPoint is used to copy the volume data from the old container
 // to the new container during patch operations.
 func CopyOldMountPointToContainerMountPoint(oldVolume, newVolume string) error {
-	oldMountPoint, err := GetVolumeMountPoint(oldVolume)
-	if err != nil {
-		return errors.WithMessage(err, "GetVolumeMountPoint failed")
-	}
-	newMountPoint, err := GetVolumeMountPoint(newVolume)
-	if err != nil {
-		return errors.WithMessage(err, "GetVolumeMountPoint failed")
-	}
-
-	if err = CopyDir(oldMountPoint, newMountPoint); err != nil {
-		return errors.WithMessage(err, "copyDir failed")
+	if err := moveVolumeData(oldVolume, newVolume); err != nil {
+		return errors.WithMessage(err, "moveData failed")
 	}
 	return nil
 }
@@ -84,4 +77,55 @@ func GetVolumeMountPoint(name string) (string, error) {
 		return "", errors.Wrapf(err, "docker.VolumeInspect failed, name: %s", name)
 	}
 	return resp.Mountpoint, nil
+}
+
+func moveVolumeData(src, dest string) error {
+	var (
+		networkingConfig network.NetworkingConfig
+		platform         ocispec.Platform
+	)
+
+	hostConfig := container.HostConfig{
+		Binds: []string{
+			fmt.Sprintf("%s:/root/src", src),
+			fmt.Sprintf("%s:/root/dest", dest),
+		},
+	}
+
+	ctx := context.Background()
+
+	resp, err := docker.Cli.ContainerCreate(ctx, &container.Config{
+		Image: "ubuntu:22.04",
+		Cmd:   []string{"tail", "-f", "/dev/null"},
+	}, &hostConfig, &networkingConfig, &platform, "")
+	if err != nil {
+		return errors.Wrapf(err, "docker.ContainerCreate failed, src: %s, dest: %s", src, dest)
+	}
+
+	defer func() {
+		docker.Cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{Force: true})
+	}()
+
+	if err = docker.Cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", resp.ID)
+	}
+
+	execCreate, err := docker.Cli.ContainerExecCreate(ctx, resp.ID, types.ExecConfig{
+		AttachStderr: true,
+		AttachStdout: true,
+		Detach:       true,
+		DetachKeys:   "ctrl-p,q",
+		WorkingDir:   "/root/",
+		Cmd:          []string{"sh", "-c", "find /root/src/ -maxdepth 1 -type f | xargs mv --target-directory=/root/dest; mv /root/src/* /root/dest"},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "docker.ContainerExecCreate failed, container: %s", resp.ID)
+	}
+
+	err = docker.Cli.ContainerExecStart(ctx, execCreate.ID, types.ExecStartCheck{})
+	if err != nil {
+		return errors.Wrapf(err, "docker.ContainerExecAttach failed, container: %s", resp.ID)
+	}
+
+	return nil
 }
