@@ -614,19 +614,19 @@ func setToMergeMap(name string, version int64) error {
 		}
 	}()
 
-	mergedDir, err := utils.GetContainerMergedLayer(name)
-	if err != nil {
-		return errors.WithMessagef(err, "utils.GetContainerMergedLayer failed, container: %s", name)
-	}
+	// mergedDir, err := utils.GetContainerMergedLayer(name)
+	// if err != nil {
+	// 	return errors.WithMessagef(err, "utils.GetContainerMergedLayer failed, container: %s", name)
+	// }
 	layer := "merges"
 	dir, _ := os.Getwd()
 	path := filepath.Join(dir, layer, strings.Split(name, "-")[0], name)
 	_ = os.MkdirAll(path, 0755)
 
-	err = utils.CopyDir(mergedDir, path)
-	if err != nil {
-		return errors.WithMessagef(err, "utils.CopyDir failed, container: %s", name)
-	}
+	// err = utils.CopyDir(mergedDir, path)
+	// if err != nil {
+	// 	return errors.WithMessagef(err, "utils.CopyDir failed, container: %s", name)
+	// }
 	vmap.ContainerMergeMap.Set(version, path)
 	return nil
 }

@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	cpRFPOption = "(cd %s; tar c .) | (cd %s; tar x)"
+	cpRFPOption = "mv %s/* %s"
 )
 
 func CopyDir(src, dest string) error {
