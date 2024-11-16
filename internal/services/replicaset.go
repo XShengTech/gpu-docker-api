@@ -411,42 +411,21 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		return info, nil
 	}
 
-	if spec.GpuCount > len(uuids) {
-		// lift gpu configuration
-		applyGpus := spec.GpuCount - len(uuids)
-		uuids, err := schedulers.GpuScheduler.Apply(applyGpus)
-		log.Infof("services.PatchContainerGpuInfo, container: %s apply %d gpus, uuids: %+v", name, applyGpus, uuids)
+	if running || pause {
+		schedulers.GpuScheduler.Restore(uuids)
+		log.Infof("services.PatchContainerGpuInfo, container: %s restore %d gpus, uuids: %+v",
+			name, len(uuids), uuids)
+	}
+	if spec.GpuCount == 0 {
+		info.HostConfig.Resources = container.Resources{}
+	} else {
+		uuids, err = schedulers.GpuScheduler.Apply(spec.GpuCount)
 		if err != nil {
 			return info, errors.WithMessage(err, "GpuScheduler.Apply failed")
 		}
-		if applyGpus == spec.GpuCount {
-			// no gpu was used before.
-			info.HostConfig.Resources = rs.newContainerResource(uuids)
-			log.Infof("services.PatchContainerGpuInfo, container: %s change to card container, now use %d gpus, uuids: %s",
-				name, len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs), info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
-		} else {
-			// before using gpu
-			info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = append(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs, uuids...)
-			log.Infof("services.PatchContainerGpuInfo, container: %s upgrad %d gpu configuration, now use %d gpus, uuids: %+v",
-				name, applyGpus, len(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs), info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
-		}
-	} else {
-		restoreGpus := len(uuids) - spec.GpuCount
-		if running || pause {
-			schedulers.GpuScheduler.Restore(uuids[:restoreGpus])
-			log.Infof("services.PatchContainerGpuInfo, container: %s restore %d gpus, uuids: %+v",
-				name, len(uuids[:restoreGpus]), uuids[:restoreGpus])
-		}
-		if len(uuids[:spec.GpuCount]) == 0 {
-			// change to no using gpu
-			info.HostConfig.Resources = container.Resources{}
-			log.Infof("services.PatchContainerGpuInfo, container: %s change to cardless container", name)
-		} else {
-			// lower gpu configuration
-			info.HostConfig.Resources.DeviceRequests[0].DeviceIDs = uuids[restoreGpus:]
-			log.Infof("services.PatchContainerGpuInfo, container: %s reduce %d gpu configuration, now use %d gpus, uuids: %+v",
-				name, restoreGpus, len(uuids[:restoreGpus]), uuids[:restoreGpus])
-		}
+		log.Infof("services.PatchContainerGpuInfo, container: %s apply %d gpus, uuids: %+v", name, spec.GpuCount, uuids)
+		cr := rs.newContainerResource(uuids)
+		info.HostConfig.Resources.DeviceRequests = cr.DeviceRequests
 	}
 
 	return info, nil
@@ -470,7 +449,7 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
-	if len(cpuset) == spec.CpuCount {
+	if len(cpuset) == spec.CpuCount && (running || pause) {
 		return info, nil
 	}
 
@@ -480,10 +459,10 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 			name, len(cpuset), cpuset)
 	}
 	cpusets, err := schedulers.CpuScheduler.Apply(spec.CpuCount)
-	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, spec.CpuCount, cpusets)
 	if err != nil {
 		return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
 	}
+	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, spec.CpuCount, cpusets)
 	info.HostConfig.Resources.CpusetCpus = strings.TrimLeft(strings.Trim(cpusets, ","), ",")
 	log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
 		name, len(cpuset), len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
