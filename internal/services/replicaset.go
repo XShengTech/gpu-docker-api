@@ -144,23 +144,34 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 
 	ctrVersionName := fmt.Sprintf("%s-%d", name, version)
 
-	uuids, err := rs.containerDeviceRequestsDeviceIDs(ctrVersionName)
+	running, err := rs.containerStatusRunning(ctrVersionName)
 	if err != nil {
-		return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
+		return errors.WithMessage(err, "services.containerStatusRunning failed")
 	}
-	schedulers.GpuScheduler.Restore(uuids)
+	pause, err := rs.containerStatusPaused(ctrVersionName)
+	if err != nil {
+		return errors.WithMessage(err, "services.containerStatusPaused failed")
+	}
 
-	cpusets, err := rs.containerCpusetCpus(ctrVersionName)
-	if err != nil {
-		return errors.WithMessage(err, "services.containerCpusetCpus failed")
-	}
-	schedulers.CpuScheduler.Restore(cpusets)
+	if running || pause {
+		uuids, err := rs.containerDeviceRequestsDeviceIDs(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
+		}
+		schedulers.GpuScheduler.Restore(uuids)
 
-	ports, err := rs.containerPortBindings(ctrVersionName)
-	if err != nil {
-		return errors.WithMessage(err, "services.containerPortBindings failed")
+		cpusets, err := rs.containerCpusetCpus(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerCpusetCpus failed")
+		}
+		schedulers.CpuScheduler.Restore(cpusets)
+
+		ports, err := rs.containerPortBindings(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerPortBindings failed")
+		}
+		schedulers.PortScheduler.Restore(ports)
 	}
-	schedulers.PortScheduler.Restore(ports)
 
 	err = deleteMergeMap(name)
 	if err != nil {
