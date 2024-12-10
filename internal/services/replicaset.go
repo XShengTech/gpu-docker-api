@@ -159,18 +159,24 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 			return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 		}
 		schedulers.GpuScheduler.Restore(uuids)
+		log.Infof("services.DeleteContainer, container: %s restore %d gpus, uuids: %+v",
+			name, len(uuids), uuids)
 
 		cpusets, err := rs.containerCpusetCpus(ctrVersionName)
 		if err != nil {
 			return errors.WithMessage(err, "services.containerCpusetCpus failed")
 		}
 		schedulers.CpuScheduler.Restore(cpusets)
+		log.Infof("services.DeleteContainer, container: %s restore %d cpus, cpusets: %+v",
+			name, len(cpusets), cpusets)
 
 		ports, err := rs.containerPortBindings(ctrVersionName)
 		if err != nil {
 			return errors.WithMessage(err, "services.containerPortBindings failed")
 		}
 		schedulers.PortScheduler.Restore(ports)
+		log.Infof("services.DeleteContainer, container: %s restore %d ports: %+v",
+			name, len(ports), ports)
 	}
 
 	err = deleteMergeMap(name)
