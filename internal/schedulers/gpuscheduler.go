@@ -169,7 +169,7 @@ func parseOutput(output string) (gpuList []*gpu, err error) {
 			if err != nil {
 				return gpuList, errors.Errorf("invaild index: %s, ", fields[0])
 			}
-			uuid := fields[1]
+			uuid := "nvidia.com/gpu=" + fields[1]
 			gpuList = append(gpuList, &gpu{
 				Index: index,
 				UUID:  &uuid,

@@ -991,9 +991,9 @@ func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
 func (rs *ReplicaSetService) newContainerResource(uuids []string) container.Resources {
 	return container.Resources{
 		DeviceRequests: []container.DeviceRequest{{
-			Driver:       "nvidia",
+			Driver:       "cdi",
 			DeviceIDs:    uuids,
-			Capabilities: [][]string{{"gpu"}},
+			Capabilities: nil,
 			Options:      nil,
 		}}}
 }
