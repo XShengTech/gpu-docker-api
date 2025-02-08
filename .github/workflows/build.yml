@@ -9,6 +9,8 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     if: github.repository == 'XShengTech/gpu-docker-api'
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
