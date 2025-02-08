@@ -35,10 +35,13 @@ services:
 
   gpu-docker-api:
     hostname: gpu-docker-api
-    image: mayooot/gpu-docker-api:v0.0.3
+    image: xshengtech/gpu-docker-api:latest
     container_name: gpu-docker-api
     restart: unless-stopped
     network_mode: host
+    runtime: nvidia
+    environment:
+      - APIKEY=CHANGETHIS
     deploy:
       resources:
         reservations:
