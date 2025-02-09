@@ -46,7 +46,7 @@ func CopyOldMergedToNewContainerMerged(oldContainer, newContainer string) error 
 	if err = docker.Cli.ContainerStop(context.TODO(), newContainer, container.StopOptions{}); err != nil {
 		return errors.Wrapf(err, "docker.ContainerStop failed, container: %s", newContainer)
 	}
-	if err = docker.Cli.ContainerStart(context.TODO(), newContainer, types.ContainerStartOptions{}); err != nil {
+	if err = docker.Cli.ContainerStart(context.TODO(), newContainer, container.StartOptions{}); err != nil {
 		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", newContainer)
 	}
 
@@ -103,10 +103,10 @@ func moveVolumeData(src, dest string) error {
 	}
 
 	defer func() {
-		docker.Cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{Force: true})
+		docker.Cli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 	}()
 
-	if err = docker.Cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+	if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", resp.ID)
 	}
 

@@ -194,7 +194,7 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 
 	err = docker.Cli.ContainerRemove(context.TODO(),
 		fmt.Sprintf("%s-%d", name, version),
-		types.ContainerRemoveOptions{Force: true})
+		container.RemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.Cli.ContainerRemove failed")
 	}
@@ -595,7 +595,7 @@ func (rs *ReplicaSetService) DeleteContainerForUpdate(name string) error {
 	// delete container
 	err = docker.Cli.ContainerRemove(context.TODO(),
 		name,
-		types.ContainerRemoveOptions{Force: true})
+		container.RemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.ContainerRemove failed")
 	}
@@ -771,7 +771,7 @@ func (rs *ReplicaSetService) CommitContainer(name string, spec models.ContainerC
 
 	// commit image
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), types.ContainerCommitOptions{
+	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), container.CommitOptions{
 		Comment: fmt.Sprintf("container name %s, commit time: %s", fmt.Sprintf("%s-%d", name, version), time.Now().Format("2006-01-02 15:04:05")),
 	})
 	if err != nil {
@@ -882,10 +882,10 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 	}
 
 	// start container
-	if err = docker.Cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+	if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		_ = docker.Cli.ContainerRemove(ctx,
 			resp.ID,
-			types.ContainerRemoveOptions{Force: true})
+			container.RemoveOptions{Force: true})
 		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
 	}
 
@@ -914,7 +914,7 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 // Check whether the container exists
 func (rs *ReplicaSetService) existContainer(name string) bool {
 	ctx := context.Background()
-	list, err := docker.Cli.ContainerList(ctx, types.ContainerListOptions{
+	list, err := docker.Cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "name", Value: fmt.Sprintf("^%s-", name)}),
 	})
 	if err != nil || len(list) == 0 {
