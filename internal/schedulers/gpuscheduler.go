@@ -86,7 +86,6 @@ func (gs *gpuScheduler) Apply(num int) ([]string, error) {
 	}
 
 	gs.Lock()
-	defer gs.Unlock()
 
 	var availableGpus []string
 	for k, v := range gs.GpuStatusMap {
@@ -100,10 +99,12 @@ func (gs *gpuScheduler) Apply(num int) ([]string, error) {
 	}
 
 	if len(availableGpus) < num {
+		gs.Unlock()
 		gs.Restore(availableGpus)
 		return nil, xerrors.NewGpuNotEnoughError()
 	}
 
+	gs.Unlock()
 	go gs.putToEtcd()
 
 	return availableGpus, nil

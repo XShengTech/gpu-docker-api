@@ -80,7 +80,6 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	}
 
 	cs.Lock()
-	defer cs.Unlock()
 
 	keys := make([]int, 0, len(cs.CpuStatusMap))
 	for k := range cs.CpuStatusMap {
@@ -104,12 +103,14 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	}
 
 	if len(applyCpus) < num {
+		cs.Unlock()
 		cs.Restore(applyCpus)
 		return "", xerrors.NewCpuNotEnoughError()
 	}
 
 	cpuSet := strings.Trim(strings.Join(applyCpus, ","), ",")
 
+	cs.Unlock()
 	go cs.putToEtcd()
 
 	return cpuSet, nil
