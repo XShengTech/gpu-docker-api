@@ -113,11 +113,15 @@ func (ps *portScheduler) Restore(ports []string) {
 	ps.Lock()
 	defer ps.Unlock()
 
+	ps.restore(ports)
+
+	go ps.putToEtcd()
+}
+
+func (ps *portScheduler) restore(ports []string) {
 	for _, port := range ports {
 		delete(ps.UsedPortSet, port)
 	}
-
-	go ps.putToEtcd()
 }
 
 func (ps *portScheduler) serialize() *string {

@@ -5,4 +5,5 @@ type Scheduler interface {
 	Restore([]string)
 	serialize() *string
 	putToEtcd()
+	restore([]string)
 }
