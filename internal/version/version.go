@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/workQueue"
 	"github.com/mayooot/gpu-docker-api/internal/xerrors"
 )
 
@@ -57,6 +58,8 @@ func (vm *versionMap) serialize() *string {
 
 func (vm *versionMap) Set(key name, value version) {
 	(*vm)[key] = value
+
+	go vm.putToEtcd()
 }
 
 func (vm *versionMap) Get(key name) (version, bool) {
@@ -71,6 +74,21 @@ func (vm *versionMap) Exist(key name) bool {
 
 func (vm *versionMap) Remove(key name) {
 	delete(*vm, key)
+
+	go vm.putToEtcd()
+}
+
+func (vm *versionMap) putToEtcd() {
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Versions,
+		Key:      containerVersionMapKey,
+		Value:    ContainerVersionMap.serialize(),
+	}
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Versions,
+		Key:      volumeVersionMapKey,
+		Value:    VolumeVersionMap.serialize(),
+	}
 }
 
 func initVersionMapFormEtcd(key string) (vm *versionMap, err error) {

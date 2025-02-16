@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/workQueue"
 	"github.com/mayooot/gpu-docker-api/internal/xerrors"
 )
 
@@ -103,6 +104,8 @@ func (gs *gpuScheduler) Apply(num int) ([]string, error) {
 		return nil, xerrors.NewGpuNotEnoughError()
 	}
 
+	go gs.putToEtcd()
+
 	return availableGpus, nil
 }
 
@@ -118,6 +121,8 @@ func (gs *gpuScheduler) Restore(gpus []string) {
 	for _, gpu := range gpus {
 		gs.GpuStatusMap[gpu] = 0
 	}
+
+	go gs.putToEtcd()
 }
 
 func (gs *gpuScheduler) serialize() *string {
@@ -139,6 +144,14 @@ func (gs *gpuScheduler) GetGpuStatus() map[string]byte {
 	}
 
 	return copyMap
+}
+
+func (gs *gpuScheduler) putToEtcd() {
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Gpus,
+		Key:      gpuStatusMapKey,
+		Value:    GpuScheduler.serialize(),
+	}
 }
 
 func getAllGpuUUID() ([]*gpu, error) {
