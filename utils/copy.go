@@ -42,14 +42,6 @@ func CopyOldMergedToNewContainerMerged(oldContainer, newContainer string) error 
 		return errors.WithMessage(err, "copyDir failed")
 	}
 
-	// It must has to do this for Restart Container. DON'T USE RESTART API
-	if err = docker.Cli.ContainerStop(context.TODO(), newContainer, container.StopOptions{}); err != nil {
-		return errors.Wrapf(err, "docker.ContainerStop failed, container: %s", newContainer)
-	}
-	if err = docker.Cli.ContainerStart(context.TODO(), newContainer, container.StartOptions{}); err != nil {
-		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", newContainer)
-	}
-
 	return nil
 }
 

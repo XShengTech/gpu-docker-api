@@ -123,7 +123,7 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		HostConfig:       &hostConfig,
 		NetworkingConfig: &networkingConfig,
 		Platform:         &platform,
-	})
+	}, false)
 	if err != nil {
 		schedulers.GpuScheduler.Restore(hostConfig.Resources.DeviceRequests[0].DeviceIDs)
 		schedulers.CpuScheduler.Restore(strings.Split(hostConfig.Resources.CpusetCpus, ","))
@@ -293,7 +293,7 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	}
 
 	// create a new container to replace the old one
-	id, newContainerName, kv, err := rs.runContainer(ctx, name, info)
+	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
 		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
 		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
@@ -304,6 +304,11 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
+	}
+
+	err = rs.startContainer(ctx, id, newContainerName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "startContainer failed")
 	}
 
 	// delete the old container
@@ -378,7 +383,7 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 	}
 
 	// create a new container to replace the old one
-	_, newContainerName, kv, err := rs.runContainer(context.TODO(), name, info)
+	_, newContainerName, kv, err := rs.runContainer(context.TODO(), name, info, false)
 	if err != nil {
 		return "", errors.WithMessage(err, "runContainer failed")
 	}
@@ -737,7 +742,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	}
 
 	//  create a container to replace the old one
-	id, newContainerName, kv, err := rs.runContainer(ctx, name, info)
+	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
 		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
 		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
@@ -748,6 +753,12 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
+	}
+
+	// start the new container
+	err = rs.startContainer(ctx, id, newContainerName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "startContainer failed")
 	}
 
 	// delete the old container
@@ -837,7 +848,7 @@ func (rs *ReplicaSetService) GetContainerHistory(name string) ([]*models.Contain
 }
 
 // It will only be executed based on the `docker.client.ContainerCreate`
-func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info *models.EtcdContainerInfo) (string, string, etcd.PutKeyValue, error) {
+func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info *models.EtcdContainerInfo, onlyCreate bool) (string, string, etcd.PutKeyValue, error) {
 	// set the version number
 	version, _ := vmap.ContainerVersionMap.Get(name)
 	version = version + 1
@@ -893,12 +904,14 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerCreate failed, name: %s", ctrVersionName)
 	}
 
-	// start container
-	if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		_ = docker.Cli.ContainerRemove(ctx,
-			resp.ID,
-			container.RemoveOptions{Force: true})
-		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
+	if !onlyCreate {
+		// start container
+		if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+			_ = docker.Cli.ContainerRemove(ctx,
+				resp.ID,
+				container.RemoveOptions{Force: true})
+			return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
+		}
 	}
 
 	// creation info is added to etcd asynchronously
@@ -921,6 +934,15 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 			Value:    val.Serialize(),
 		},
 		nil
+}
+
+func (rs *ReplicaSetService) startContainer(ctx context.Context, respId, ctrVersionName string) error {
+	if err := docker.Cli.ContainerStart(ctx, respId, container.StartOptions{}); err != nil {
+		_ = docker.Cli.ContainerRemove(ctx, respId, container.RemoveOptions{Force: true})
+		return errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", respId, ctrVersionName)
+	}
+
+	return nil
 }
 
 // Check whether the container exists
