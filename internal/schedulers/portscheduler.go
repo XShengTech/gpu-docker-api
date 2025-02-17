@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/workQueue"
 	"github.com/mayooot/gpu-docker-api/internal/xerrors"
 )
 
@@ -98,6 +99,8 @@ func (ps *portScheduler) Apply(num int) ([]string, error) {
 		}
 	}
 
+	go ps.putToEtcd()
+
 	return availablePorts, nil
 }
 
@@ -110,6 +113,12 @@ func (ps *portScheduler) Restore(ports []string) {
 	ps.Lock()
 	defer ps.Unlock()
 
+	ps.restore(ports)
+
+	go ps.putToEtcd()
+}
+
+func (ps *portScheduler) restore(ports []string) {
 	for _, port := range ports {
 		delete(ps.UsedPortSet, port)
 	}
@@ -149,6 +158,14 @@ func (ps *portScheduler) GetPortStatus() *portScheduler {
 	}
 
 	return copyPS
+}
+
+func (ps *portScheduler) putToEtcd() {
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Gpus,
+		Key:      gpuStatusMapKey,
+		Value:    GpuScheduler.serialize(),
+	}
 }
 
 func splitPortRange(portRange string) (startPort, endPort int, err error) {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/commander-cli/cmd"
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/workQueue"
 	"github.com/mayooot/gpu-docker-api/internal/xerrors"
 	"github.com/pkg/errors"
 )
@@ -103,19 +104,32 @@ func (cs *cpuScheduler) Apply(num int) (string, error) {
 	}
 
 	if len(applyCpus) < num {
-		cs.Restore(applyCpus)
+		cs.restore(applyCpus)
 		return "", xerrors.NewCpuNotEnoughError()
 	}
 
 	cpuSet := strings.Trim(strings.Join(applyCpus, ","), ",")
 
+	go cs.putToEtcd()
+
 	return cpuSet, nil
 }
 
 func (cs *cpuScheduler) Restore(cpuSet []string) error {
+
 	cs.Lock()
 	defer cs.Unlock()
 
+	err := cs.restore(cpuSet)
+	if err != nil {
+		return errors.Wrap(err, "restore failed")
+	}
+	go cs.putToEtcd()
+
+	return nil
+}
+
+func (cs *cpuScheduler) restore(cpuSet []string) error {
 	for _, cpu := range cpuSet {
 		cs.CpuStatusMap[cpu] = 0
 	}
@@ -142,6 +156,14 @@ func (cs *cpuScheduler) GetCpuStatus() map[string]byte {
 	}
 
 	return copyMap
+}
+
+func (cs *cpuScheduler) putToEtcd() {
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Cpus,
+		Key:      cpuStatusMapKey,
+		Value:    CpuScheduler.serialize(),
+	}
 }
 
 func getAllCpuProcessors() ([]string, error) {

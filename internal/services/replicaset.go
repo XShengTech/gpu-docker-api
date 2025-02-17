@@ -69,6 +69,7 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	}
 	shmSize, _ := utils.ToBytes("256GB")
 	hostConfig.ShmSize = shmSize
+	hostConfig.Runtime = "nvidia"
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
@@ -123,8 +124,10 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		HostConfig:       &hostConfig,
 		NetworkingConfig: &networkingConfig,
 		Platform:         &platform,
-	})
+	}, false)
 	if err != nil {
+		schedulers.GpuScheduler.Restore(hostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		schedulers.CpuScheduler.Restore(strings.Split(hostConfig.Resources.CpusetCpus, ","))
 		return id, containerName, errors.Wrapf(err, "serivce.runContainer failed, spec: %+v", spec)
 	}
 
@@ -145,24 +148,41 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 
 	ctrVersionName := fmt.Sprintf("%s-%d", name, version)
 
-	uuids, err := rs.containerDeviceRequestsDeviceIDs(ctrVersionName)
+	running, err := rs.containerStatusRunning(ctrVersionName)
 	if err != nil {
-		return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
+		return errors.WithMessage(err, "services.containerStatusRunning failed")
 	}
-	schedulers.GpuScheduler.Restore(uuids)
-	schedulers.GpuScheduler.Dealloc(name)
+	pause, err := rs.containerStatusPaused(ctrVersionName)
+	if err != nil {
+		return errors.WithMessage(err, "services.containerStatusPaused failed")
+	}
 
-	cpusets, err := rs.containerCpusetCpus(ctrVersionName)
-	if err != nil {
-		return errors.WithMessage(err, "services.containerCpusetCpus failed")
-	}
-	schedulers.CpuScheduler.Restore(cpusets)
+	if running || pause {
+		uuids, err := rs.containerDeviceRequestsDeviceIDs(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
+		}
+		schedulers.GpuScheduler.Restore(uuids)
+		log.Infof("services.DeleteContainer, container: %s restore %d gpus, uuids: %+v",
+			name, len(uuids), uuids)
+		schedulers.GpuScheduler.Dealloc(name)
 
-	ports, err := rs.containerPortBindings(ctrVersionName)
-	if err != nil {
-		return errors.WithMessage(err, "services.containerPortBindings failed")
+		cpusets, err := rs.containerCpusetCpus(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerCpusetCpus failed")
+		}
+		schedulers.CpuScheduler.Restore(cpusets)
+		log.Infof("services.DeleteContainer, container: %s restore %d cpus, cpusets: %+v",
+			name, len(cpusets), cpusets)
+
+		ports, err := rs.containerPortBindings(ctrVersionName)
+		if err != nil {
+			return errors.WithMessage(err, "services.containerPortBindings failed")
+		}
+		schedulers.PortScheduler.Restore(ports)
+		log.Infof("services.DeleteContainer, container: %s restore %d ports: %+v",
+			name, len(ports), ports)
 	}
-	schedulers.PortScheduler.Restore(ports)
 
 	err = deleteMergeMap(name)
 	if err != nil {
@@ -178,7 +198,7 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 
 	err = docker.Cli.ContainerRemove(context.TODO(),
 		fmt.Sprintf("%s-%d", name, version),
-		types.ContainerRemoveOptions{Force: true})
+		container.RemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.Cli.ContainerRemove failed")
 	}
@@ -275,8 +295,10 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	}
 
 	// create a new container to replace the old one
-	id, newContainerName, kv, err := rs.runContainer(ctx, name, info)
+	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
+		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "runContainer failed")
 	}
 
@@ -284,6 +306,11 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
+	}
+
+	err = rs.startContainer(ctx, id, newContainerName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "startContainer failed")
 	}
 
 	// delete the old container
@@ -358,7 +385,7 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 	}
 
 	// create a new container to replace the old one
-	_, newContainerName, kv, err := rs.runContainer(context.TODO(), name, info)
+	_, newContainerName, kv, err := rs.runContainer(context.TODO(), name, info, false)
 	if err != nil {
 		return "", errors.WithMessage(err, "runContainer failed")
 	}
@@ -413,48 +440,22 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		return info, nil
 	}
 
-	oldUuids := uuids
-	replicaSetName := strings.Split(name, "-")[0]
-	schedulers.GpuScheduler.Dealloc(replicaSetName)
-
-	if spec.GpuCount > len(uuids) {
-		// lift gpu configuration
-		applyGpus := spec.GpuCount - len(uuids)
-		uuids, err := schedulers.GpuScheduler.Apply(applyGpus)
-		log.Infof("services.PatchContainerGpuInfo, container: %s apply %d gpus, uuids: %+v", name, applyGpus, uuids)
+	if running || pause {
+		schedulers.GpuScheduler.Restore(uuids)
+		log.Infof("services.PatchContainerGpuInfo, container: %s restore %d gpus, uuids: %+v",
+			name, len(uuids), uuids)
+		schedulers.GpuScheduler.Dealloc(name)
+	}
+	if spec.GpuCount == 0 {
+		info.HostConfig.Resources = container.Resources{}
+	} else {
+		uuids, err = schedulers.GpuScheduler.Apply(spec.GpuCount)
 		if err != nil {
 			return info, errors.WithMessage(err, "GpuScheduler.Apply failed")
 		}
-		if applyGpus == spec.GpuCount {
-			// no gpu was used before.
-			schedulers.GpuScheduler.Alloc(replicaSetName, uuids)
-			deviceIDs, _ := schedulers.GpuScheduler.GetAllocGpus(replicaSetName)
-			log.Infof("services.PatchContainerGpuInfo, container: %s change to card container, now use %d gpus, uuids: %s",
-				name, len(deviceIDs), deviceIDs)
-		} else {
-			// before using gpu
-			schedulers.GpuScheduler.Alloc(replicaSetName, append(oldUuids, uuids...))
-			deviceIDs, _ := schedulers.GpuScheduler.GetAllocGpus(replicaSetName)
-			log.Infof("services.PatchContainerGpuInfo, container: %s upgrad %d gpu configuration, now use %d gpus, uuids: %+v",
-				name, applyGpus, len(deviceIDs), deviceIDs)
-		}
-	} else {
-		restoreGpus := len(uuids) - spec.GpuCount
-		if running || pause {
-			schedulers.GpuScheduler.Restore(uuids[:restoreGpus])
-			log.Infof("services.PatchContainerGpuInfo, container: %s restore %d gpus, uuids: %+v",
-				name, len(uuids[:restoreGpus]), uuids[:restoreGpus])
-		}
-		if len(uuids[:spec.GpuCount]) == 0 {
-			// change to no using gpu
-			schedulers.GpuScheduler.Alloc(replicaSetName, []string{})
-			log.Infof("services.PatchContainerGpuInfo, container: %s change to cardless container", name)
-		} else {
-			// lower gpu configuration
-			schedulers.GpuScheduler.Alloc(replicaSetName, uuids[restoreGpus:])
-			log.Infof("services.PatchContainerGpuInfo, container: %s reduce %d gpu configuration, now use %d gpus, uuids: %+v",
-				name, restoreGpus, len(uuids[:restoreGpus]), uuids[:restoreGpus])
-		}
+		log.Infof("services.PatchContainerGpuInfo, container: %s apply %d gpus, uuids: %+v", name, spec.GpuCount, uuids)
+		cr := rs.newContainerResource(uuids)
+		info.HostConfig.Resources.DeviceRequests = cr.DeviceRequests
 	}
 
 	return info, nil
@@ -478,7 +479,7 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
-	if len(cpuset) == spec.CpuCount {
+	if len(cpuset) == spec.CpuCount && (running || pause) {
 		return info, nil
 	}
 
@@ -488,10 +489,10 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 			name, len(cpuset), cpuset)
 	}
 	cpusets, err := schedulers.CpuScheduler.Apply(spec.CpuCount)
-	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, spec.CpuCount, cpusets)
 	if err != nil {
 		return info, errors.WithMessage(err, "CpuScheduler.Apply failed")
 	}
+	log.Infof("services.PatchContainerCpuInfo, container: %s apply %d cpus, cpusets: %+v", name, spec.CpuCount, cpusets)
 	info.HostConfig.Resources.CpusetCpus = strings.TrimLeft(strings.Trim(cpusets, ","), ",")
 	log.Infof("services.PatchContainerCpuInfo, container: %s upgrad %d cpu configuration, now use %d cpus, cpusets: %+v",
 		name, len(cpuset), len(strings.Split(info.HostConfig.Resources.CpusetCpus, ",")), info.HostConfig.Resources.CpusetCpus)
@@ -541,6 +542,8 @@ func (rs *ReplicaSetService) patchVolume(spec *models.VolumePatch, info *models.
 }
 
 func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, restorePort, isLatest bool) error {
+	var err error
+
 	if isLatest {
 		// get the latest version number
 		version, ok := vmap.ContainerVersionMap.Get(name)
@@ -551,19 +554,22 @@ func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, 
 	}
 
 	// whether to restore gpu resources
+	var uuids []string
 	if restoreGpu {
-		uuids, err := rs.containerDeviceRequestsDeviceIDs(name)
+		uuids, err = rs.containerDeviceRequestsDeviceIDs(name)
 		if err != nil {
 			return errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 		}
 		schedulers.GpuScheduler.Restore(uuids)
+		schedulers.GpuScheduler.Dealloc(name)
 		log.Infof("services.StopContainer, container: %s restore %d gpus, uuids: %+v",
 			name, len(uuids), uuids)
 	}
 
 	// whether to restore cpu resources
+	var cpusets []string
 	if restoreCpu {
-		cpusets, err := rs.containerCpusetCpus(name)
+		cpusets, err = rs.containerCpusetCpus(name)
 		if err != nil {
 			return errors.WithMessage(err, "services.containerCpusetCpus failed")
 		}
@@ -586,6 +592,8 @@ func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, 
 	// stop container
 	ctx := context.Background()
 	if err := docker.Cli.ContainerStop(ctx, name, container.StopOptions{}); err != nil {
+		schedulers.GpuScheduler.Restore(uuids)
+		schedulers.CpuScheduler.Restore(cpusets)
 		return errors.WithMessage(err, "docker.ContainerStop failed")
 	}
 
@@ -606,7 +614,7 @@ func (rs *ReplicaSetService) DeleteContainerForUpdate(name string) error {
 	// delete container
 	err = docker.Cli.ContainerRemove(context.TODO(),
 		name,
-		types.ContainerRemoveOptions{Force: true})
+		container.RemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.ContainerRemove failed")
 	}
@@ -716,6 +724,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	if len(uuids) != 0 {
 		if running || pause {
 			schedulers.GpuScheduler.Restore(uuids)
+			schedulers.GpuScheduler.Dealloc(name)
 		}
 		// apply for gpu
 		availableGpus, err := schedulers.GpuScheduler.Apply(len(uuids))
@@ -741,8 +750,10 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	}
 
 	//  create a container to replace the old one
-	id, newContainerName, kv, err := rs.runContainer(ctx, name, info)
+	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
+		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "services.runContainer failed")
 	}
 
@@ -750,6 +761,12 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
 		return id, newContainerName, errors.WithMessage(err, "utils.CopyOldMergedToNewContainerMerged failed")
+	}
+
+	// start the new container
+	err = rs.startContainer(ctx, id, newContainerName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "startContainer failed")
 	}
 
 	// delete the old container
@@ -785,7 +802,7 @@ func (rs *ReplicaSetService) CommitContainer(name string, spec models.ContainerC
 
 	// commit image
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), types.ContainerCommitOptions{
+	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), container.CommitOptions{
 		Comment: fmt.Sprintf("container name %s, commit time: %s", fmt.Sprintf("%s-%d", name, version), time.Now().Format("2006-01-02 15:04:05")),
 	})
 	if err != nil {
@@ -839,7 +856,7 @@ func (rs *ReplicaSetService) GetContainerHistory(name string) ([]*models.Contain
 }
 
 // It will only be executed based on the `docker.client.ContainerCreate`
-func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info *models.EtcdContainerInfo) (string, string, etcd.PutKeyValue, error) {
+func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info *models.EtcdContainerInfo, onlyCreate bool) (string, string, etcd.PutKeyValue, error) {
 	// set the version number
 	version, _ := vmap.ContainerVersionMap.Get(name)
 	version = version + 1
@@ -895,12 +912,14 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerCreate failed, name: %s", ctrVersionName)
 	}
 
-	// start container
-	if err = docker.Cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		_ = docker.Cli.ContainerRemove(ctx,
-			resp.ID,
-			types.ContainerRemoveOptions{Force: true})
-		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
+	if !onlyCreate {
+		// start container
+		if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+			_ = docker.Cli.ContainerRemove(ctx,
+				resp.ID,
+				container.RemoveOptions{Force: true})
+			return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
+		}
 	}
 
 	// creation info is added to etcd asynchronously
@@ -925,10 +944,19 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 		nil
 }
 
+func (rs *ReplicaSetService) startContainer(ctx context.Context, respId, ctrVersionName string) error {
+	if err := docker.Cli.ContainerStart(ctx, respId, container.StartOptions{}); err != nil {
+		_ = docker.Cli.ContainerRemove(ctx, respId, container.RemoveOptions{Force: true})
+		return errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", respId, ctrVersionName)
+	}
+
+	return nil
+}
+
 // Check whether the container exists
 func (rs *ReplicaSetService) existContainer(name string) bool {
 	ctx := context.Background()
-	list, err := docker.Cli.ContainerList(ctx, types.ContainerListOptions{
+	list, err := docker.Cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{Key: "name", Value: fmt.Sprintf("^%s-", name)}),
 	})
 	if err != nil || len(list) == 0 {

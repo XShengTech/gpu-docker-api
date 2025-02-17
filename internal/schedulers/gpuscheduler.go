@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
+	"github.com/mayooot/gpu-docker-api/internal/workQueue"
 	"github.com/mayooot/gpu-docker-api/internal/xerrors"
 )
 
@@ -100,9 +101,11 @@ func (gs *gpuScheduler) Apply(num int) ([]string, error) {
 	}
 
 	if len(availableGpus) < num {
-		gs.Restore(availableGpus)
+		gs.restore(availableGpus)
 		return nil, xerrors.NewGpuNotEnoughError()
 	}
+
+	go gs.putToEtcd()
 
 	return availableGpus, nil
 }
@@ -115,6 +118,16 @@ func (gs *gpuScheduler) Restore(gpus []string) {
 
 	gs.Lock()
 	defer gs.Unlock()
+
+	gs.restore(gpus)
+
+	go gs.putToEtcd()
+}
+
+func (gs *gpuScheduler) restore(gpus []string) {
+	if len(gpus) <= 0 || len(gpus) > gs.AvailableGpuNums {
+		return
+	}
 
 	for _, gpu := range gpus {
 		gs.GpuStatusMap[gpu] = 0
@@ -176,6 +189,14 @@ func (gs *gpuScheduler) GetAllocGpus(name string) ([]string, bool) {
 	return gpus, ok
 }
 
+func (gs *gpuScheduler) putToEtcd() {
+	workQueue.Queue <- etcd.PutKeyValue{
+		Resource: etcd.Gpus,
+		Key:      gpuStatusMapKey,
+		Value:    GpuScheduler.serialize(),
+	}
+}
+
 func getAllGpuUUID() ([]*gpu, error) {
 	// c := cmd.NewCommand(allGpuUUIDCommand)
 	// err := c.Execute()
@@ -222,7 +243,7 @@ func parseOutput(output string) (gpuList []*gpu, err error) {
 			if err != nil {
 				return gpuList, errors.Errorf("invaild index: %s, ", fields[0])
 			}
-			uuid := fields[1]
+			uuid := "nvidia.com/gpu=" + fields[1]
 			gpuList = append(gpuList, &gpu{
 				Index: index,
 				UUID:  &uuid,
