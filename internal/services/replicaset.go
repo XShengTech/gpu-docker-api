@@ -455,6 +455,7 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		}
 		log.Infof("services.PatchContainerGpuInfo, container: %s apply %d gpus, uuids: %+v", name, spec.GpuCount, uuids)
 		cr := rs.newContainerResource(uuids)
+		schedulers.GpuScheduler.Alloc(name, uuids)
 		info.HostConfig.Resources.DeviceRequests = cr.DeviceRequests
 	}
 
