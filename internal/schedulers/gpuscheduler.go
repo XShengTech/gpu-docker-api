@@ -159,12 +159,16 @@ func (gs *gpuScheduler) Alloc(name string, gpus []string) {
 	gs.Lock()
 	defer gs.Unlock()
 
+	name = strings.Split(name, "-")[0]
+
 	gs.GpuAllocMap[name] = gpus
 }
 
 func (gs *gpuScheduler) Dealloc(name string) {
 	gs.Lock()
 	defer gs.Unlock()
+
+	name = strings.Split(name, "-")[0]
 
 	delete(gs.GpuAllocMap, name)
 }
@@ -209,14 +213,14 @@ func getAllGpuUUID() ([]*gpu, error) {
 	// 	return nil, errors.Wrap(err, "parseOutput failed")
 	// }
 	uuids := []string{
-		"GPU-0",
-		"GPU-1",
-		"GPU-2",
-		"GPU-3",
-		"GPU-4",
-		"GPU-5",
-		"GPU-6",
-		"GPU-7",
+		"MockGPU-0",
+		"MockGPU-1",
+		"MockGPU-2",
+		"MockGPU-3",
+		"MockGPU-4",
+		"MockGPU-5",
+		"MockGPU-6",
+		"MockGPU-7",
 	}
 	gpuList := []*gpu{}
 	for i, uuid := range uuids {
