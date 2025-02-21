@@ -15,14 +15,14 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-RUN make nvidia_linux
+RUN make mock_linux
 
 FROM ubuntu:22.04
 
 VOLUME /data
 WORKDIR /data
 
-COPY --from=builder /build/bin/gpu-docker-api-nvidia-linux-amd64 /data/gpu-docker-api
+COPY --from=builder /build/bin/gpu-docker-api-mock-linux-amd64 /data/gpu-docker-api
 
 EXPOSE 2378
 

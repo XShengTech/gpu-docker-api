@@ -13,30 +13,38 @@ CURRENT_DIR = $(shell pwd)
 BUILD_DIR = ${CURRENT_DIR}/cmd/${BINARY}
 BIN_DIR= ${CURRENT_DIR}/bin
 
+NVIDIA = nvidia
+MOCK = mock
+
 LDFLAGS = -ldflags "-s -w -X main.BRANCH=${BRANCH} -X main.VERSION=${VERSION} -X main.COMMIT=${COMMIT} -X main.GoVersion=${GO_VERSION} -X main.BuildTime=${BUILD_TIME}"
 
 all: fmt imports clean linux darwin windows
 
 build: clean linux darwin windows
 
-linux:
+nvidia_linux:
 	cd ${BUILD_DIR}; \
-	GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -o ${BIN_DIR}/${BINARY}-linux-${GOARCH} . ; \
+	GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -tags "${NVIDIA}" -o ${BIN_DIR}/${BINARY}-${NVIDIA}-linux-${GOARCH} . ; \
 	cd - >/dev/null
 
-linux_no_ldflags:
+nvidia_linux_no_ldflags:
 	cd ${BUILD_DIR}; \
-	GOOS=linux GOARCH=${GOARCH} go build -o ${BIN_DIR}/${BINARY}-linux-${GOARCH} . ; \
+	GOOS=linux GOARCH=${GOARCH} go build -tags "${NVIDIA}" -o ${BIN_DIR}/${BINARY}-${NVIDIA}-linux-${GOARCH} . ; \
 	cd - >/dev/null
 
-darwin:
+nvidia_darwin:
 	cd ${BUILD_DIR}; \
-	GOOS=darwin GOARCH=${GOARCH} go build ${LDFLAGS} -o ${BIN_DIR}/${BINARY}-darwin-${GOARCH} . ; \
+	GOOS=darwin GOARCH=${GOARCH} go build ${LDFLAGS} -tags "${NVIDIA}" -o ${BIN_DIR}/${BINARY}-${NVIDIA}-darwin-${GOARCH} . ; \
 	cd - >/dev/null
 
-windows:
+nvidia_windows:
 	cd ${BUILD_DIR}; \
-	GOOS=windows GOARCH=${GOARCH} go build ${LDFLAGS} -o ${BIN_DIR}/${BINARY}-windows-${GOARCH}.exe . ; \
+	GOOS=windows GOARCH=${GOARCH} go build ${LDFLAGS} -tags "${NVIDIA}" -o ${BIN_DIR}/${BINARY}-${NVIDIA}-windows-${GOARCH}.exe . ; \
+	cd - >/dev/null
+
+mock_linux:
+	cd ${BUILD_DIR}; \
+	GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -tags "${MOCK}" -o ${BIN_DIR}/${BINARY}-${MOCK}-linux-${GOARCH} . ; \
 	cd - >/dev/null
 
 docker_build:

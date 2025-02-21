@@ -1,4 +1,4 @@
-//go:build !mock
+//go:build mock
 
 package schedulers
 
@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/commander-cli/cmd"
 	"github.com/pkg/errors"
 
 	"github.com/mayooot/gpu-docker-api/internal/etcd"
@@ -17,8 +16,6 @@ import (
 )
 
 const (
-	allGpuUUIDCommand = "nvidia-smi --query-gpu=index,uuid --format=csv,noheader,nounits"
-
 	gpuStatusMapKey = "gpuStatusMapKey"
 )
 
@@ -165,16 +162,24 @@ func (gs *gpuScheduler) putToEtcd() {
 }
 
 func getAllGpuUUID() ([]*gpu, error) {
-	c := cmd.NewCommand(allGpuUUIDCommand)
-	err := c.Execute()
-	if err != nil {
-		return nil, errors.Wrap(err, "cmd.Execute failed")
+	uuids := []string{
+		"MockGPU-0",
+		"MockGPU-1",
+		"MockGPU-2",
+		"MockGPU-3",
+		"MockGPU-4",
+		"MockGPU-5",
+		"MockGPU-6",
+		"MockGPU-7",
+	}
+	gpuList := []*gpu{}
+	for i, uuid := range uuids {
+		gpuList = append(gpuList, &gpu{
+			Index: i,
+			UUID:  &uuid,
+		})
 	}
 
-	gpuList, err := parseOutput(c.Stdout())
-	if err != nil {
-		return nil, errors.Wrap(err, "parseOutput failed")
-	}
 	return gpuList, nil
 }
 
