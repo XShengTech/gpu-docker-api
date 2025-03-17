@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
@@ -224,7 +223,7 @@ func (rs *ReplicaSetService) ExecuteContainer(name string, exec *models.Containe
 	}
 
 	ctx := context.Background()
-	execCreate, err := docker.Cli.ContainerExecCreate(ctx, fmt.Sprintf("%s-%d", name, version), types.ExecConfig{
+	execCreate, err := docker.Cli.ContainerExecCreate(ctx, fmt.Sprintf("%s-%d", name, version), container.ExecOptions{
 		AttachStderr: true,
 		AttachStdout: true,
 		Detach:       true,
@@ -236,7 +235,7 @@ func (rs *ReplicaSetService) ExecuteContainer(name string, exec *models.Containe
 		return resp, errors.Wrapf(err, "docker.ContainerExecCreate failed, name: %s, spec: %+v", name, exec)
 	}
 
-	hijackedResp, err := docker.Cli.ContainerExecAttach(ctx, execCreate.ID, types.ExecStartCheck{})
+	hijackedResp, err := docker.Cli.ContainerExecAttach(ctx, execCreate.ID, container.ExecAttachOptions{})
 	defer hijackedResp.Close()
 	if err != nil {
 		return resp, errors.Wrapf(err, "docker.ContainerExecAttach failed, name: %s, spec: %+v", name, exec)
@@ -445,7 +444,9 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 			name, len(uuids), uuids)
 	}
 	if spec.GpuCount == 0 {
-		info.HostConfig.Resources = container.Resources{}
+		info.HostConfig.Resources = container.Resources{
+			Memory: info.HostConfig.Memory,
+		}
 	} else {
 		uuids, err = schedulers.GpuScheduler.Apply(spec.GpuCount)
 		if err != nil {
@@ -704,6 +705,12 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		return id, newContainerName, errors.WithMessage(err, "services.containerCpusetCpus failed")
 	}
 
+	// get memory info
+	memory, err := rs.containerMemory(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "services.containerMemory failed")
+	}
+
 	// get creation info from etcd
 	infoBytes, err := etcd.GetValue(etcd.Containers, name)
 	if err != nil {
@@ -740,6 +747,11 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		}
 		log.Infof("services.RestartContainer, container: %s apply %d cpus, cpusets: %+v", ctrVersionName, len(strings.Split(availableCpus, ",")), availableCpus)
 		info.HostConfig.Resources.CpusetCpus = availableCpus
+	}
+
+	// check whether the container is using memory
+	if memory != 0 {
+		info.HostConfig.Resources.Memory = memory
 	}
 
 	//  create a container to replace the old one

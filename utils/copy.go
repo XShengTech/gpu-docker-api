@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/commander-cli/cmd"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -102,7 +101,7 @@ func moveVolumeData(src, dest string) error {
 		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", resp.ID)
 	}
 
-	execCreate, err := docker.Cli.ContainerExecCreate(ctx, resp.ID, types.ExecConfig{
+	execCreate, err := docker.Cli.ContainerExecCreate(ctx, resp.ID, container.ExecOptions{
 		AttachStderr: true,
 		AttachStdout: true,
 		Detach:       true,
@@ -114,7 +113,7 @@ func moveVolumeData(src, dest string) error {
 		return errors.Wrapf(err, "docker.ContainerExecCreate failed, container: %s", resp.ID)
 	}
 
-	err = docker.Cli.ContainerExecStart(ctx, execCreate.ID, types.ExecStartCheck{})
+	err = docker.Cli.ContainerExecStart(ctx, execCreate.ID, container.ExecStartOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "docker.ContainerExecAttach failed, container: %s", resp.ID)
 	}

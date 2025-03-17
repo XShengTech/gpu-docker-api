@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/commander-cli/cmd v1.6.0
-	github.com/docker/docker v27.5.1+incompatible
+	github.com/docker/docker v28.0.1+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/judwhite/go-svc v1.2.1
