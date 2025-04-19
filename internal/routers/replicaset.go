@@ -342,8 +342,8 @@ func (rh *ReplicaSetHandler) Pause(c *gin.Context) {
 		return
 	}
 
-	if err := cs.StopContainer(name, false, false, false, true); err != nil {
-		log.Errorf("services.StopContainer failed, original error: %T %v", errors.Cause(err), err)
+	if err := cs.PauseContainer(name); err != nil {
+		log.Errorf("services.PauseContainer failed, original error: %T %v", errors.Cause(err), err)
 		log.Errorf("stack trace: \n%+v\n", err)
 		ResponseError(c, CodeContainerShutDownFailed)
 		return

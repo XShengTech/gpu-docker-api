@@ -599,6 +599,25 @@ func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, 
 	return nil
 }
 
+func (rs *ReplicaSetService) PauseContainer(name string) error {
+	var err error
+
+	version, ok := vmap.ContainerVersionMap.Get(name)
+	if !ok {
+		return errors.Errorf("container: %s version: %d not found in ContainerVersionMap", name, version)
+	}
+	name = fmt.Sprintf("%s-%d", name, version)
+
+	ctx := context.Background()
+	if err = docker.Cli.ContainerPause(ctx, name); err != nil {
+		log.Errorf("services.PauseContainer, container: %s pause failed, err: %v", name, err)
+		return errors.WithMessage(err, "docker.ContainerPause failed")
+	}
+
+	log.Infof("services.PauseContainer, container: %s pause successfully", name)
+	return nil
+}
+
 func (rs *ReplicaSetService) DeleteContainerForUpdate(name string) error {
 	// restore port resources
 	ports, err := rs.containerPortBindings(name)
@@ -737,7 +756,7 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 
 	// check whether the container is using cpu
 	if len(cpus) != 0 {
-		if running {
+		if running || pause {
 			schedulers.CpuScheduler.Restore(cpus)
 		}
 		// apply for cpu
