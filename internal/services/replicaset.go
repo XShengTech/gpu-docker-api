@@ -417,9 +417,6 @@ func (rs *ReplicaSetService) RollbackContainer(name string, spec *models.Rollbac
 }
 
 func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *models.EtcdContainerInfo) (*models.EtcdContainerInfo, error) {
-	if spec == nil {
-		return info, nil
-	}
 	running, err := rs.containerStatusRunning(name)
 	if err != nil {
 		return info, errors.WithMessage(err, "services.containerStatusRunning failed")
@@ -434,8 +431,16 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
-	if len(uuids) == spec.GpuCount {
-		return info, nil
+	if spec != nil {
+		if len(uuids) == spec.GpuCount && (running || pause) {
+			return info, nil
+		}
+	}
+
+	if spec == nil {
+		spec = &models.GpuPatch{
+			GpuCount: len(uuids),
+		}
 	}
 
 	if running || pause {
@@ -461,9 +466,6 @@ func (rs *ReplicaSetService) patchGpu(name string, spec *models.GpuPatch, info *
 }
 
 func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *models.EtcdContainerInfo) (*models.EtcdContainerInfo, error) {
-	if spec == nil {
-		return info, nil
-	}
 	running, err := rs.containerStatusRunning(name)
 	if err != nil {
 		return info, errors.WithMessage(err, "services.containerStatusRunning failed")
@@ -478,8 +480,16 @@ func (rs *ReplicaSetService) patchCpu(name string, spec *models.CpuPatch, info *
 		return info, errors.WithMessage(err, "services.containerDeviceRequestsDeviceIDs failed")
 	}
 
-	if len(cpuset) == spec.CpuCount && (running || pause) {
-		return info, nil
+	if spec != nil {
+		if len(cpuset) == spec.CpuCount && (running || pause) {
+			return info, nil
+		}
+	}
+
+	if spec == nil {
+		spec = &models.CpuPatch{
+			CpuCount: len(cpuset),
+		}
 	}
 
 	if running || pause {
