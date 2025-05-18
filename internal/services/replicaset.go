@@ -29,6 +29,8 @@ import (
 	"github.com/mayooot/gpu-docker-api/utils"
 )
 
+const ballastStone = "var/backups/ballaststone"
+
 var lxcfsBind = []string{
 	"/var/lib/lxcfs/proc/cpuinfo:/proc/cpuinfo:rw",
 	"/var/lib/lxcfs/proc/diskstats:/proc/diskstats:rw",
@@ -236,10 +238,10 @@ func (rs *ReplicaSetService) ExecuteContainer(name string, exec *models.Containe
 	}
 
 	hijackedResp, err := docker.Cli.ContainerExecAttach(ctx, execCreate.ID, container.ExecAttachOptions{})
-	defer hijackedResp.Close()
 	if err != nil {
 		return resp, errors.Wrapf(err, "docker.ContainerExecAttach failed, name: %s, spec: %+v", name, exec)
 	}
+	defer hijackedResp.Close()
 
 	var buf bytes.Buffer
 	_, _ = stdcopy.StdCopy(&buf, &buf, hijackedResp.Reader)
@@ -298,6 +300,11 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
 		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "runContainer failed")
+	}
+
+	err = rs.containerRemoveBallastStone(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "removeContainerBallastStone failed")
 	}
 
 	// copy the old container's merged files to the new container
@@ -791,6 +798,11 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 		return id, newContainerName, errors.WithMessage(err, "services.runContainer failed")
 	}
 
+	err = rs.containerRemoveBallastStone(ctrVersionName)
+	if err != nil {
+		return id, newContainerName, errors.WithMessage(err, "removeContainerBallastStone failed")
+	}
+
 	// copy the old container's merged files to the new container
 	err = utils.CopyOldMergedToNewContainerMerged(ctrVersionName, newContainerName)
 	if err != nil {
@@ -895,6 +907,14 @@ func (rs *ReplicaSetService) startContainer(ctx context.Context, respId, ctrVers
 		return errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", respId, ctrVersionName)
 	}
 
+	go func(name string) {
+		time.Sleep(5 * time.Second)
+		err := rs.containerCreateBallastStone(name)
+		if err != nil {
+			log.Errorf("services.containerCreateBallastStone failed, name: %s, err: %v", name, err)
+		}
+	}(ctrVersionName)
+
 	return nil
 }
 
@@ -961,4 +981,39 @@ func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
 		return 0, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
 	return resp.HostConfig.Resources.Memory, nil
+}
+
+func (rs *ReplicaSetService) containerCreateBallastStone(name string) error {
+	containerName := strings.Split(name, "-")[0]
+
+	cmds := models.ContainerExecute{
+		Cmd: []string{
+			"dd",
+			"if=/dev/zero",
+			"of=/" + ballastStone,
+			"bs=1M",
+			"count=5", // 5MB
+		},
+	}
+
+	_, err := rs.ExecuteContainer(containerName, &cmds)
+	if err != nil {
+		return errors.WithMessagef(err, "services.ExecuteContainer failed, container: %s", containerName)
+	}
+
+	return nil
+}
+
+func (rs *ReplicaSetService) containerRemoveBallastStone(name string) error {
+	mergedLayer, err := utils.GetContainerMergedLayer(name)
+	if err != nil {
+		return errors.WithMessagef(err, "utils.GetContainerMergedLayer failed, container: %s", name)
+	}
+	err = os.Remove(mergedLayer + "/" + ballastStone)
+	if err != nil {
+		if err != os.ErrExist {
+			return errors.WithMessagef(err, "remove container ballast stone failed, path: %s", mergedLayer+"/"+ballastStone)
+		}
+	}
+	return nil
 }

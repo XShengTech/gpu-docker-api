@@ -79,10 +79,7 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 
 	if !onlyCreate {
 		// start container
-		if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-			_ = docker.Cli.ContainerRemove(ctx,
-				resp.ID,
-				container.RemoveOptions{Force: true})
+		if err = rs.startContainer(ctx, resp.ID, ctrVersionName); err != nil {
 			return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", resp.ID, ctrVersionName)
 		}
 	}
