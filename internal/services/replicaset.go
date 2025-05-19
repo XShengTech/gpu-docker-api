@@ -1009,9 +1009,10 @@ func (rs *ReplicaSetService) containerRemoveBallastStone(name string) error {
 	if err != nil {
 		return errors.WithMessagef(err, "utils.GetContainerMergedLayer failed, container: %s", name)
 	}
+
 	err = os.Remove(mergedLayer + "/" + ballastStone)
 	if err != nil {
-		if err != os.ErrExist {
+		if !os.IsNotExist(err) {
 			return errors.WithMessagef(err, "remove container ballast stone failed, path: %s", mergedLayer+"/"+ballastStone)
 		}
 	}
