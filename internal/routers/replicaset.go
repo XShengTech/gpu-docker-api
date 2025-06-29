@@ -159,6 +159,10 @@ func (rh *ReplicaSetHandler) Run(c *gin.Context) {
 			ResponseError(c, CodeContainerGpuNotEnough)
 			return
 		}
+		if xerrors.IsCpuNotEnoughError(err) {
+			ResponseError(c, CodeContainerCpuNotEnough)
+			return
+		}
 		if xerrors.IsPortNotEnoughError(err) {
 			ResponseError(c, CodeContainerPortNotEnough)
 			return
