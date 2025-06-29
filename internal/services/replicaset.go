@@ -97,6 +97,9 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	if spec.CpuCount > 0 {
 		cpusets, err := schedulers.CpuScheduler.Apply(spec.CpuCount)
 		if err != nil {
+			if spec.GpuCount > 0 {
+				schedulers.GpuScheduler.Restore(uuids)
+			}
 			return id, containerName, errors.Wrapf(err, "CpuScheduler.Apply failed, spec: %+v", spec)
 		}
 		hostConfig.Resources.CpusetCpus = cpusets
@@ -106,6 +109,12 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	if spec.Memory != "" {
 		memory, err := utils.ToBytes(spec.Memory)
 		if err != nil {
+			if spec.GpuCount > 0 {
+				schedulers.GpuScheduler.Restore(uuids)
+			}
+			if spec.CpuCount > 0 {
+				schedulers.CpuScheduler.Restore(strings.Split(hostConfig.Resources.CpusetCpus, ","))
+			}
 			return id, containerName, errors.Wrapf(err, "MemoryGetBytes failed, spec: %+v", spec)
 		}
 		hostConfig.Resources.Memory = memory
@@ -127,7 +136,9 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 		Platform:         &platform,
 	}, false)
 	if err != nil {
-		schedulers.GpuScheduler.Restore(hostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		if len(hostConfig.Resources.DeviceRequests) > 0 {
+			schedulers.GpuScheduler.Restore(hostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		}
 		schedulers.CpuScheduler.Restore(strings.Split(hostConfig.Resources.CpusetCpus, ","))
 		return id, containerName, errors.Wrapf(err, "serivce.runContainer failed, spec: %+v", spec)
 	}
@@ -279,12 +290,19 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	// update cpu info
 	info, err = rs.patchCpu(ctrVersionName, spec.CpuPatch, info)
 	if err != nil {
+		if len(info.HostConfig.Resources.DeviceRequests) > 0 {
+			schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		}
 		return id, newContainerName, errors.WithMessage(err, "patchCpu failed")
 	}
 
 	// update memory info
 	info, err = rs.patchMemory(ctrVersionName, spec.MemoryPatch, info)
 	if err != nil {
+		if len(info.HostConfig.Resources.DeviceRequests) > 0 {
+			schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		}
+		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "patchMemory failed")
 	}
 
@@ -297,7 +315,9 @@ func (rs *ReplicaSetService) PatchContainer(name string, spec *models.PatchReque
 	// create a new container to replace the old one
 	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
-		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		if len(info.HostConfig.Resources.DeviceRequests) > 0 {
+			schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		}
 		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "runContainer failed")
 	}
@@ -793,7 +813,9 @@ func (rs *ReplicaSetService) RestartContainer(name string) (id, newContainerName
 	//  create a container to replace the old one
 	id, newContainerName, kv, err := rs.runContainer(ctx, name, info, true)
 	if err != nil {
-		schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		if len(info.HostConfig.Resources.DeviceRequests) > 0 {
+			schedulers.GpuScheduler.Restore(info.HostConfig.Resources.DeviceRequests[0].DeviceIDs)
+		}
 		schedulers.CpuScheduler.Restore(strings.Split(info.HostConfig.Resources.CpusetCpus, ","))
 		return id, newContainerName, errors.WithMessage(err, "services.runContainer failed")
 	}
