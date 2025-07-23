@@ -19,7 +19,6 @@ RUN make nvidia_linux
 
 FROM ubuntu:22.04
 
-VOLUME /data
 WORKDIR /data
 
 COPY --from=builder /build/bin/gpu-docker-api-nvidia-linux-amd64 /data/gpu-docker-api
