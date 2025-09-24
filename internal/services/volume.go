@@ -98,7 +98,7 @@ func (vs *VolumeService) PatchVolumeSize(name string, spec *models.VolumeSize) (
 	// get the latest version number
 	version, ok := vmap.VolumeVersionMap.Get(name)
 	if !ok {
-		return resp, errors.Errorf("container: %s version: %d not found in ContainerVersionMap", name, version)
+		return resp, errors.Errorf("volume: %s version: %d not found in VolumeVersionMap", name, version)
 	}
 	volVersionName := fmt.Sprintf("%s-%d", name, version)
 
