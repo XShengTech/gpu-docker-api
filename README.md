@@ -467,3 +467,9 @@ Sat Dec  9 09:04:06 2023
 +-----------------------------------------------------------------------------+
 ~~~
 
+
+# 📌 贡献者许可协议 (CLA)
+
+> [!NOTE]
+> This project requires contributors to sign our Contributor License Agreement (CLA).  
+> See: https://github.com/XShengTech/.github/blob/main/CLA.md
