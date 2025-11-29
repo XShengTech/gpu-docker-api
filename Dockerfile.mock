@@ -1,4 +1,4 @@
-FROM golang:1.23.6-alpine AS builder
+FROM golang:1.25-alpine AS builder
 LABEL stage=gobuilder \
       mainatiner=https://github.com/XShengTech/gpu-docker-api
 
