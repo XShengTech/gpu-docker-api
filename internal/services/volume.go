@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/volume"
+	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"github.com/ngaut/log"
 	"github.com/pkg/errors"
 
@@ -29,7 +29,7 @@ func (vs *VolumeService) CreateVolume(spec *models.VolumeCreate) (resp volume.Vo
 		return resp, errors.Wrapf(xerrors.NewVolumeExistedError(), "volume %s", spec.Name)
 	}
 
-	opt := volume.CreateOptions{Driver: "local"}
+	opt := client.VolumeCreateOptions{Driver: "local"}
 	if len(spec.Name) != 0 {
 		opt.Name = spec.Name
 	}
@@ -73,7 +73,8 @@ func (vs *VolumeService) createVolume(ctx context.Context, name string, info mod
 	info.CreateTime = time.Now().Format("2006-01-02 15:04:05")
 
 	// create volume
-	resp, err = docker.Cli.VolumeCreate(ctx, *info.Opt)
+	r, err := docker.Cli.VolumeCreate(ctx, *info.Opt)
+	resp = r.Volume
 	if err != nil {
 		return resp, kv, errors.Wrapf(err, "docker.VolumeCreate failed, opt: %+v", info)
 	}
@@ -188,7 +189,7 @@ func (vs *VolumeService) DeleteVolume(name string, isLatest, deleteRecord bool) 
 		}
 	}
 
-	err := docker.Cli.VolumeRemove(context.TODO(), name, true)
+	_, err := docker.Cli.VolumeRemove(context.TODO(), name, client.VolumeRemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.VolumeRemove failed")
 	}
@@ -235,12 +236,12 @@ func (vs *VolumeService) GetVolumeHistory(name string) ([]*models.VolumeHistoryI
 
 func (vs *VolumeService) existVolume(name string) bool {
 	ctx := context.Background()
-	list, err := docker.Cli.VolumeList(ctx, volume.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{Key: "name", Value: fmt.Sprintf("^%s-", name)}),
+	list, err := docker.Cli.VolumeList(ctx, client.VolumeListOptions{
+		Filters: client.Filters{}.Add("name", fmt.Sprintf("^%s-", name)),
 	})
-	if err != nil || len(list.Volumes) == 0 {
+	if err != nil || len(list.Items) == 0 {
 		return false
 	}
 
-	return len(list.Volumes) > 0
+	return len(list.Items) > 0
 }

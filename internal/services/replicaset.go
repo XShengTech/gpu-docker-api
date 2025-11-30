@@ -10,11 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/ngaut/log"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -74,11 +73,12 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
-		hostConfig.PortBindings = make(nat.PortMap, len(spec.ContainerPorts))
-		config.ExposedPorts = make(nat.PortSet, len(spec.ContainerPorts))
+		hostConfig.PortBindings = make(network.PortMap, len(spec.ContainerPorts))
+		config.ExposedPorts = make(network.PortSet, len(spec.ContainerPorts))
 		for _, port := range spec.ContainerPorts {
-			config.ExposedPorts[nat.Port(port+"/tcp")] = struct{}{}
-			hostConfig.PortBindings[nat.Port(port+"/tcp")] = nil
+			p, _ := network.ParsePort(port + "/tcp")
+			config.ExposedPorts[p] = struct{}{}
+			hostConfig.PortBindings[p] = nil
 		}
 	}
 
@@ -207,9 +207,9 @@ func (rs *ReplicaSetService) DeleteContainer(name string) error {
 		Key:      name,
 	}
 
-	err = docker.Cli.ContainerRemove(context.TODO(),
+	_, err = docker.Cli.ContainerRemove(context.TODO(),
 		fmt.Sprintf("%s-%d", name, version),
-		container.RemoveOptions{Force: true})
+		client.ContainerRemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.Cli.ContainerRemove failed")
 	}
@@ -236,10 +236,9 @@ func (rs *ReplicaSetService) ExecuteContainer(name string, exec *models.Containe
 	}
 
 	ctx := context.Background()
-	execCreate, err := docker.Cli.ContainerExecCreate(ctx, fmt.Sprintf("%s-%d", name, version), container.ExecOptions{
+	execCreate, err := docker.Cli.ExecCreate(ctx, fmt.Sprintf("%s-%d", name, version), client.ExecCreateOptions{
 		AttachStderr: true,
 		AttachStdout: true,
-		Detach:       true,
 		DetachKeys:   "ctrl-p,q",
 		WorkingDir:   workDir,
 		Cmd:          cmd,
@@ -248,7 +247,7 @@ func (rs *ReplicaSetService) ExecuteContainer(name string, exec *models.Containe
 		return resp, errors.Wrapf(err, "docker.ContainerExecCreate failed, name: %s, spec: %+v", name, exec)
 	}
 
-	hijackedResp, err := docker.Cli.ContainerExecAttach(ctx, execCreate.ID, container.ExecAttachOptions{})
+	hijackedResp, err := docker.Cli.ExecAttach(ctx, execCreate.ID, client.ExecAttachOptions{})
 	if err != nil {
 		return resp, errors.Wrapf(err, "docker.ContainerExecAttach failed, name: %s, spec: %+v", name, exec)
 	}
@@ -626,7 +625,7 @@ func (rs *ReplicaSetService) StopContainer(name string, restoreGpu, restoreCpu, 
 
 	// stop container
 	ctx := context.Background()
-	if err := docker.Cli.ContainerStop(ctx, name, container.StopOptions{}); err != nil {
+	if _, err := docker.Cli.ContainerStop(ctx, name, client.ContainerStopOptions{}); err != nil {
 		schedulers.GpuScheduler.Restore(uuids)
 		schedulers.CpuScheduler.Restore(cpusets)
 		return errors.WithMessage(err, "docker.ContainerStop failed")
@@ -646,7 +645,7 @@ func (rs *ReplicaSetService) PauseContainer(name string) error {
 	name = fmt.Sprintf("%s-%d", name, version)
 
 	ctx := context.Background()
-	if err = docker.Cli.ContainerPause(ctx, name); err != nil {
+	if _, err = docker.Cli.ContainerPause(ctx, name, client.ContainerPauseOptions{}); err != nil {
 		log.Errorf("services.PauseContainer, container: %s pause failed, err: %v", name, err)
 		return errors.WithMessage(err, "docker.ContainerPause failed")
 	}
@@ -666,9 +665,9 @@ func (rs *ReplicaSetService) DeleteContainerForUpdate(name string) error {
 		name, len(ports), ports)
 
 	// delete container
-	err = docker.Cli.ContainerRemove(context.TODO(),
+	_, err = docker.Cli.ContainerRemove(context.TODO(),
 		name,
-		container.RemoveOptions{Force: true})
+		client.ContainerRemoveOptions{Force: true})
 	if err != nil {
 		return errors.WithMessage(err, "docker.ContainerRemove failed")
 	}
@@ -719,9 +718,9 @@ func (rs *ReplicaSetService) StartupContainer(name string) error {
 		return errors.Errorf("container: %s version: %d not found in ContainerVersionMap", name, version)
 	}
 
-	err := docker.Cli.ContainerRestart(context.TODO(),
+	_, err := docker.Cli.ContainerRestart(context.TODO(),
 		fmt.Sprintf("%s-%d", name, version),
-		container.StopOptions{})
+		client.ContainerRestartOptions{})
 	if err != nil {
 		return errors.WithMessagef(err, "docker.ContainerRestart failed, name: %s", name)
 	}
@@ -870,7 +869,7 @@ func (rs *ReplicaSetService) CommitContainer(name string, spec models.ContainerC
 
 	// commit image
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), container.CommitOptions{
+	resp, err := docker.Cli.ContainerCommit(ctx, fmt.Sprintf("%s-%d", name, version), client.ContainerCommitOptions{
 		Comment: fmt.Sprintf("container name %s, commit time: %s", fmt.Sprintf("%s-%d", name, version), time.Now().Format("2006-01-02 15:04:05")),
 	})
 	if err != nil {
@@ -881,7 +880,10 @@ func (rs *ReplicaSetService) CommitContainer(name string, spec models.ContainerC
 	if len(spec.NewImageName) != 0 {
 		imageName = spec.NewImageName
 	}
-	if err = docker.Cli.ImageTag(ctx, resp.ID, imageName); err != nil {
+	if _, err := docker.Cli.ImageTag(ctx, client.ImageTagOptions{
+		Source: resp.ID,
+		Target: imageName,
+	}); err != nil {
 		return imageName, errors.WithMessage(err, "docker.ImageTag failed")
 	}
 	log.Infof("services.CommitContainer, container: %s commit successfully", fmt.Sprintf("%s-%d", name, version))
@@ -924,8 +926,8 @@ func (rs *ReplicaSetService) GetContainerHistory(name string) ([]*models.Contain
 }
 
 func (rs *ReplicaSetService) startContainer(ctx context.Context, respId, ctrVersionName string) error {
-	if err := docker.Cli.ContainerStart(ctx, respId, container.StartOptions{}); err != nil {
-		_ = docker.Cli.ContainerRemove(ctx, respId, container.RemoveOptions{Force: true})
+	if _, err := docker.Cli.ContainerStart(ctx, respId, client.ContainerStartOptions{}); err != nil {
+		docker.Cli.ContainerRemove(ctx, respId, client.ContainerRemoveOptions{Force: true})
 		return errors.Wrapf(err, "docker.ContainerStart failed, id: %s, name: %s", respId, ctrVersionName)
 	}
 
@@ -943,45 +945,45 @@ func (rs *ReplicaSetService) startContainer(ctx context.Context, respId, ctrVers
 // Check whether the container exists
 func (rs *ReplicaSetService) existContainer(name string) bool {
 	ctx := context.Background()
-	list, err := docker.Cli.ContainerList(ctx, container.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{Key: "name", Value: fmt.Sprintf("^%s-", name)}),
+	list, err := docker.Cli.ContainerList(ctx, client.ContainerListOptions{
+		Filters: client.Filters{}.Add("name", fmt.Sprintf("^%s-", name)),
 	})
-	if err != nil || len(list) == 0 {
+	if err != nil || len(list.Items) == 0 {
 		return false
 	}
 
-	return len(list) > 0
+	return len(list.Items) > 0
 }
 
 func (rs *ReplicaSetService) containerStatusRunning(name string) (bool, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return false, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.State.Running, nil
+	return resp.Container.State.Running, nil
 }
 
 func (rs *ReplicaSetService) containerStatusPaused(name string) (bool, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return false, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.State.Paused, nil
+	return resp.Container.State.Paused, nil
 }
 
 func (rs *ReplicaSetService) containerPortBindings(name string) ([]string, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	if resp.HostConfig.PortBindings == nil {
+	if resp.Container.HostConfig.PortBindings == nil {
 		return []string{}, nil
 	}
 	var ports []string
-	for _, v := range resp.HostConfig.PortBindings {
+	for _, v := range resp.Container.HostConfig.PortBindings {
 		ports = append(ports, v[0].HostPort)
 	}
 	return ports, nil
@@ -989,20 +991,20 @@ func (rs *ReplicaSetService) containerPortBindings(name string) ([]string, error
 
 func (rs *ReplicaSetService) containerCpusetCpus(name string) ([]string, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return []string{}, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return strings.Split(resp.HostConfig.Resources.CpusetCpus, ","), nil
+	return strings.Split(resp.Container.HostConfig.Resources.CpusetCpus, ","), nil
 }
 
 func (rs *ReplicaSetService) containerMemory(name string) (int64, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return 0, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.HostConfig.Resources.Memory, nil
+	return resp.Container.HostConfig.Resources.Memory, nil
 }
 
 func (rs *ReplicaSetService) containerCreateBallastStone(name string) error {

@@ -3,9 +3,9 @@ package models
 import (
 	"encoding/json"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/volume"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -26,9 +26,9 @@ func (i *EtcdContainerInfo) Serialize() *string {
 }
 
 type EtcdVolumeInfo struct {
-	Version    int64                 `json:"version"`
-	CreateTime string                `json:"createTime"`
-	Opt        *volume.CreateOptions `json:"opt"`
+	Version    int64                       `json:"version"`
+	CreateTime string                      `json:"createTime"`
+	Opt        *client.VolumeCreateOptions `json:"opt"`
 }
 
 func (i *EtcdVolumeInfo) Serialize() *string {

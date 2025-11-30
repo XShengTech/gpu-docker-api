@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/ngaut/log"
 	"github.com/pkg/errors"
 
@@ -60,7 +61,7 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 		}
 		var index int
 		for k := range info.HostConfig.PortBindings {
-			info.HostConfig.PortBindings[k] = []nat.PortBinding{{
+			info.HostConfig.PortBindings[k] = []network.PortBinding{{
 				HostPort: availableOSPorts[index],
 			}}
 			index++
@@ -72,7 +73,13 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 	info.CreateTime = time.Now().Format("2006-01-02 15:04:05")
 
 	// create container
-	resp, err := docker.Cli.ContainerCreate(ctx, info.Config, info.HostConfig, info.NetworkingConfig, info.Platform, ctrVersionName)
+	resp, err := docker.Cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:           info.Config,
+		HostConfig:       info.HostConfig,
+		NetworkingConfig: info.NetworkingConfig,
+		Platform:         info.Platform,
+		Name:             ctrVersionName,
+	})
 	if err != nil {
 		return "", "", etcd.PutKeyValue{}, errors.Wrapf(err, "docker.ContainerCreate failed, name: %s", ctrVersionName)
 	}
@@ -108,14 +115,14 @@ func (rs *ReplicaSetService) runContainer(ctx context.Context, name string, info
 
 func (rs *ReplicaSetService) containerDeviceRequestsDeviceIDs(name string) ([]string, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.ContainerInspect(ctx, name)
+	resp, err := docker.Cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	if resp.HostConfig.DeviceRequests == nil {
+	if resp.Container.HostConfig.DeviceRequests == nil {
 		return []string{}, nil
 	}
-	return resp.HostConfig.DeviceRequests[0].DeviceIDs, nil
+	return resp.Container.HostConfig.DeviceRequests[0].DeviceIDs, nil
 }
 
 func (rs *ReplicaSetService) newContainerResource(uuids []string) container.Resources {

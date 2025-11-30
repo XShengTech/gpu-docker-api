@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	"github.com/commander-cli/cmd"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 
@@ -45,11 +46,11 @@ func CopyOldMergedToNewContainerMerged(oldContainer, newContainer string) error 
 }
 
 func GetContainerMergedLayer(name string) (string, error) {
-	resp, err := docker.Cli.ContainerInspect(context.TODO(), name)
-	if err != nil || len(resp.GraphDriver.Data["UpperDir"]) == 0 {
+	resp, err := docker.Cli.ContainerInspect(context.TODO(), name, client.ContainerInspectOptions{})
+	if err != nil || len(resp.Container.GraphDriver.Data["UpperDir"]) == 0 {
 		return "", errors.Wrapf(err, "docker.ContainerInspect failed, name: %s", name)
 	}
-	return resp.GraphDriver.Data["UpperDir"], nil
+	return resp.Container.GraphDriver.Data["UpperDir"], nil
 }
 
 // CopyOldMountPointToContainerMountPoint is used to copy the volume data from the old container
@@ -63,11 +64,11 @@ func CopyOldMountPointToContainerMountPoint(oldVolume, newVolume string) error {
 
 func GetVolumeMountPoint(name string) (string, error) {
 	ctx := context.Background()
-	resp, err := docker.Cli.VolumeInspect(ctx, name)
-	if err != nil || len(resp.Mountpoint) == 0 {
+	resp, err := docker.Cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if err != nil || len(resp.Volume.Mountpoint) == 0 {
 		return "", errors.Wrapf(err, "docker.VolumeInspect failed, name: %s", name)
 	}
-	return resp.Mountpoint, nil
+	return resp.Volume.Mountpoint, nil
 }
 
 func moveVolumeData(src, dest string) error {
@@ -85,26 +86,31 @@ func moveVolumeData(src, dest string) error {
 
 	ctx := context.Background()
 
-	resp, err := docker.Cli.ContainerCreate(ctx, &container.Config{
-		Image: "ubuntu:22.04",
-		Cmd:   []string{"tail", "-f", "/dev/null"},
-	}, &hostConfig, &networkingConfig, &platform, "")
+	resp, err := docker.Cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image: "ubuntu:22.04",
+			Cmd:   []string{"tail", "-f", "/dev/null"},
+		},
+		HostConfig:       &hostConfig,
+		NetworkingConfig: &networkingConfig,
+		Platform:         &platform,
+		Name:             "",
+	})
 	if err != nil {
 		return errors.Wrapf(err, "docker.ContainerCreate failed, src: %s, dest: %s", src, dest)
 	}
 
 	defer func() {
-		docker.Cli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+		docker.Cli.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 	}()
 
-	if err = docker.Cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	if _, err = docker.Cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		return errors.Wrapf(err, "docker.ContainerStart failed, container: %s", resp.ID)
 	}
 
-	execCreate, err := docker.Cli.ContainerExecCreate(ctx, resp.ID, container.ExecOptions{
+	execCreate, err := docker.Cli.ExecCreate(ctx, resp.ID, client.ExecCreateOptions{
 		AttachStderr: true,
 		AttachStdout: true,
-		Detach:       true,
 		DetachKeys:   "ctrl-p,q",
 		WorkingDir:   "/root/",
 		Cmd:          []string{"sh", "-c", "find /root/src/ -maxdepth 1 -type f | xargs mv --target-directory=/root/dest; mv /root/src/* /root/dest"},
@@ -113,7 +119,7 @@ func moveVolumeData(src, dest string) error {
 		return errors.Wrapf(err, "docker.ContainerExecCreate failed, container: %s", resp.ID)
 	}
 
-	err = docker.Cli.ContainerExecStart(ctx, execCreate.ID, container.ExecStartOptions{})
+	_, err = docker.Cli.ExecStart(ctx, execCreate.ID, client.ExecStartOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "docker.ContainerExecAttach failed, container: %s", resp.ID)
 	}
