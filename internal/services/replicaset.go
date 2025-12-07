@@ -70,6 +70,9 @@ func (rs *ReplicaSetService) RunGpuContainer(spec *models.ContainerRun) (id, con
 	shmSize, _ := utils.ToBytes("256GB")
 	hostConfig.ShmSize = shmSize
 	hostConfig.Runtime = rs.containerRuntime()
+	hostConfig.RestartPolicy = container.RestartPolicy{
+		Name: "unless-stopped",
+	}
 
 	// bind port
 	if len(spec.ContainerPorts) > 0 {
